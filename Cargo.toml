@@ -3,7 +3,7 @@ name = "plzplz"
 authors = ["k88hudson"]
 description = "A simple cross-platform task runner with helpful defaults"
 license = "MIT"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2024"
 repository = "https://github.com/k88hudson/plzplz"
 
