@@ -57,7 +57,7 @@ fn run_task_impl(
         if let Err(ref e) = result
             && let Some(ref hook) = task.fail_hook
         {
-            if handle_fail_hook(hook, e, &work_dir, interactive)? {
+            if handle_fail_hook(hook, e, &work_dir, task.tool_env.as_deref(), interactive)? {
                 return Ok(());
             }
         }
@@ -133,8 +133,9 @@ fn handle_deferred_failures(
                 .and_then(|t| t.dir.as_ref())
                 .map(|d| base_dir.join(d))
                 .unwrap_or_else(|| base_dir.to_path_buf());
+            let tool_env = task.and_then(|t| t.tool_env.as_deref());
 
-            if handle_fail_hook(hook, &failure.error, &task_work_dir, interactive)? {
+            if handle_fail_hook(hook, &failure.error, &task_work_dir, tool_env, interactive)? {
                 continue;
             }
         } else {
@@ -271,29 +272,40 @@ fn handle_fail_hook(
     hook: &FailHook,
     error: &anyhow::Error,
     work_dir: &Path,
+    tool_env: Option<&str>,
     interactive: bool,
 ) -> Result<bool> {
+    let wrap = |cmd: &str| -> String {
+        match tool_env {
+            Some("uv") => format!("uv run {cmd}"),
+            Some("pnpm") => format!("pnpm exec {cmd}"),
+            _ => cmd.to_string(),
+        }
+    };
+
     match hook {
         FailHook::Command(cmd) => {
+            let wrapped = wrap(cmd);
             eprintln!("\n\x1b[31mTask failed:\x1b[0m {error}");
-            eprintln!("Running fail hook: {cmd}");
-            let _ = exec_shell(cmd, work_dir);
+            eprintln!("Running fail hook: {wrapped}");
+            let _ = exec_shell(&wrapped, work_dir);
         }
         FailHook::Message(msg) => {
             eprintln!("\n\x1b[31mTask failed:\x1b[0m {error}");
             eprintln!("⚠️  {msg}");
         }
         FailHook::Suggest { suggest_command } => {
+            let wrapped = wrap(suggest_command);
             eprintln!("\n\x1b[31mTask failed:\x1b[0m {error}");
             if !interactive {
-                eprintln!("\x1b[33mSuggestion:\x1b[0m try running \x1b[1m{suggest_command}\x1b[0m");
+                eprintln!("\x1b[33mSuggestion:\x1b[0m try running \x1b[1m{wrapped}\x1b[0m");
             } else {
-                let run_it: bool = cliclack::confirm(format!("Run `{suggest_command}`?"))
+                let run_it: bool = cliclack::confirm(format!("Run `{wrapped}`?"))
                     .initial_value(true)
                     .interact()
                     .unwrap_or(false);
                 if run_it {
-                    if exec_shell(suggest_command, work_dir).is_ok() {
+                    if exec_shell(&wrapped, work_dir).is_ok() {
                         return Ok(true);
                     }
                     eprintln!("\x1b[31mFix command failed.\x1b[0m");
