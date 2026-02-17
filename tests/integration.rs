@@ -827,6 +827,44 @@ run = "echo hello"
     }
 
     #[test]
+    fn cli_non_interactive_when_no_tty() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("plz.toml"),
+            r#"
+[tasks.hello]
+run = "echo hello"
+"#,
+        )
+        .unwrap();
+
+        // Without a TTY, plz should detect non-interactive mode
+        plz()
+            .current_dir(dir.path())
+            .assert()
+            .stderr(predicate::str::contains("Skipping interactive prompts: stdin is not a terminal"));
+    }
+
+    #[test]
+    fn cli_non_interactive_flag() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("plz.toml"),
+            r#"
+[tasks.hello]
+run = "echo hello"
+"#,
+        )
+        .unwrap();
+
+        plz()
+            .arg("--no-interactive")
+            .current_dir(dir.path())
+            .assert()
+            .stderr(predicate::str::contains("Skipping interactive prompts"));
+    }
+
+    #[test]
     fn cli_init_already_exists() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("plz.toml"), "[tasks]").unwrap();

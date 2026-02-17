@@ -7,12 +7,13 @@ mod utils;
 use anyhow::{Result, bail};
 use clap::{CommandFactory, Parser, Subcommand};
 use std::env;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
     name = "plz",
-    about = "A simple task runner. Define tasks in plz.toml and run them with `plz <task>`.",
+    about = "Runs tasks defined in plz.toml\nOutput JSON schema for plz.toml with plz plz schema",
     after_help = "\x1b[34mRun \x1b[1mplz\x1b[22m to choose a task\nRun \x1b[1mplz init\x1b[22m to create a new config\n\x1b[0m"
 )]
 struct Cli {
@@ -53,7 +54,19 @@ enum PlzCommand {
 }
 
 fn is_interactive(cli: &Cli) -> bool {
-    !cli.no_interactive && !is_ci::cached()
+    if cli.no_interactive {
+        eprintln!("Skipping interactive prompts");
+        return false;
+    }
+    if is_ci::cached() {
+        eprintln!("Skipping interactive prompts: CI environment detected");
+        return false;
+    }
+    if !std::io::stdin().is_terminal() {
+        eprintln!("Skipping interactive prompts: stdin is not a terminal");
+        return false;
+    }
+    true
 }
 
 const CONFIG_NAMES: &[&str] = &["plz.toml", ".plz.toml"];
