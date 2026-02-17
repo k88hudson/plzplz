@@ -842,7 +842,9 @@ run = "echo hello"
         plz()
             .current_dir(dir.path())
             .assert()
-            .stderr(predicate::str::contains("Skipping interactive prompts: stdin is not a terminal"));
+            .stderr(predicate::str::contains(
+                "Skipping interactive prompts: stdin is not a terminal",
+            ));
     }
 
     #[test]
