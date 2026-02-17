@@ -5,7 +5,7 @@ mod templates;
 mod utils;
 
 use anyhow::{Result, bail};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use std::env;
 use std::path::PathBuf;
 
@@ -58,15 +58,31 @@ fn is_interactive(cli: &Cli) -> bool {
 
 const CONFIG_NAMES: &[&str] = &["plz.toml", ".plz.toml"];
 
-fn find_config() -> Result<PathBuf> {
-    let cwd = env::current_dir()?;
+fn find_config() -> Option<PathBuf> {
+    let cwd = env::current_dir().ok()?;
     for name in CONFIG_NAMES {
         let path = cwd.join(name);
         if path.exists() {
-            return Ok(path);
+            return Some(path);
         }
     }
-    bail!("No plz.toml found in current directory");
+    None
+}
+
+fn is_git_repo() -> bool {
+    let Ok(cwd) = env::current_dir() else {
+        return false;
+    };
+    let mut dir = cwd.as_path();
+    loop {
+        if dir.join(".git").exists() {
+            return true;
+        }
+        match dir.parent() {
+            Some(parent) => dir = parent,
+            None => return false,
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -87,10 +103,25 @@ fn main() -> Result<()> {
         None => {}
     }
 
-    let config_path = find_config()?;
-    let config = config::load(&config_path)?;
-
     let interactive = is_interactive(&cli);
+
+    let config_path = match find_config() {
+        Some(path) => path,
+        None => {
+            if interactive && is_git_repo() {
+                let create: bool =
+                    cliclack::confirm("No plz.toml found. Create one?")
+                        .initial_value(true)
+                        .interact()?;
+                if create {
+                    return init::run();
+                }
+            }
+            Cli::command().print_help()?;
+            return Ok(());
+        }
+    };
+    let config = config::load(&config_path)?;
     let base_dir = config_path.parent().unwrap().to_path_buf();
 
     if cli.task.is_empty() {

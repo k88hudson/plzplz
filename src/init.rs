@@ -94,6 +94,25 @@ pub fn generate_scaffold(content: &str) -> String {
     out
 }
 
+pub fn add_suffix_to_toml(toml: &str, suffix: &str, task_names: &[(String, Option<String>)]) -> String {
+    let mut result = toml.to_string();
+    for (name, _) in task_names {
+        result = result.replace(
+            &format!("[tasks.{name}]"),
+            &format!("[tasks.{name}-{suffix}]"),
+        );
+        result = result.replace(
+            &format!("\"plz:{name}\""),
+            &format!("\"plz:{name}-{suffix}\""),
+        );
+        result = result.replace(
+            &format!("\"plz {name}\""),
+            &format!("\"plz {name}-{suffix}\""),
+        );
+    }
+    result
+}
+
 pub fn detect_project_types(cwd: &Path) -> Vec<DefaultConfig> {
     DEFAULTS
         .iter()
@@ -132,9 +151,10 @@ pub fn run() -> Result<()> {
     cliclack::log::info(format!("Detected: {}", detected.join(", ")))?;
 
     let mut output = String::new();
+    let needs_suffix = project_types.len() > 1;
 
     for pt in &project_types {
-        let all_values: Vec<&str> = pt.tasks.iter().map(|(name, _)| name.as_str()).collect();
+        let first_value: Vec<&str> = pt.tasks.first().map(|(name, _)| name.as_str()).into_iter().collect();
         let max_name_len = pt
             .tasks
             .iter()
@@ -153,7 +173,7 @@ pub fn run() -> Result<()> {
                     })
                     .collect::<Vec<_>>(),
             )
-            .initial_values(all_values)
+            .initial_values(first_value)
             .required(false)
             .interact()?;
 
@@ -172,8 +192,18 @@ pub fn run() -> Result<()> {
             }
         }
 
+        let doc_str = if needs_suffix {
+            let selected_tasks: Vec<(String, Option<String>)> = selected
+                .iter()
+                .map(|name| (name.to_string(), None))
+                .collect();
+            add_suffix_to_toml(&doc.to_string(), pt.name, &selected_tasks)
+        } else {
+            doc.to_string()
+        };
+
         writeln!(output, "# {}", pt.name)?;
-        write!(output, "{}", doc.to_string().trim())?;
+        write!(output, "{}", doc_str.trim())?;
         writeln!(output)?;
         writeln!(output)?;
     }

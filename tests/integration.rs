@@ -553,6 +553,50 @@ mod init_tests {
     }
 
     #[test]
+    fn add_suffix_renames_tasks() {
+        let toml = r#"
+[tasks.dev]
+run = "cargo run"
+
+[tasks.build]
+run = "cargo build"
+"#;
+        let (_, tasks) = init::parse_default(toml).unwrap();
+        let result = init::add_suffix_to_toml(toml, "rust", &tasks);
+        assert!(result.contains("[tasks.dev-rust]"));
+        assert!(result.contains("[tasks.build-rust]"));
+        assert!(!result.contains("[tasks.dev]"));
+        assert!(!result.contains("[tasks.build]"));
+    }
+
+    #[test]
+    fn add_suffix_updates_plz_references() {
+        let toml = r#"
+[tasks.lint]
+run_serial = ["cargo clippy", "cargo fmt --check"]
+fail_hook = { suggest_command = "plz fix" }
+
+[tasks.fix]
+run_serial = ["cargo fmt", "cargo clippy --fix --allow-dirty"]
+"#;
+        let (_, tasks) = init::parse_default(toml).unwrap();
+        let result = init::add_suffix_to_toml(toml, "rust", &tasks);
+        assert!(result.contains("plz fix-rust"), "got:\n{result}");
+    }
+
+    #[test]
+    fn add_suffix_not_applied_for_single_type() {
+        let toml = r#"
+[tasks.dev]
+run = "cargo run"
+"#;
+        let (_, tasks) = init::parse_default(toml).unwrap();
+        // When there's only one type, callers should not call add_suffix_to_toml.
+        // Verify the original names are intact.
+        assert!(tasks.iter().any(|(n, _)| n == "dev"));
+    }
+
+    #[test]
     fn detect_project_type_none() {
         let dir = TempDir::new().unwrap();
         unsafe {
@@ -599,9 +643,9 @@ mod init_tests {
             .2;
         let (_, tasks) = init::parse_default(uv_toml).unwrap();
         let names: Vec<&str> = tasks.iter().map(|(n, _)| n.as_str()).collect();
-        assert!(names.contains(&"dev"));
-        assert!(names.contains(&"build"));
         assert!(names.contains(&"test"));
+        assert!(names.contains(&"build"));
+        assert!(names.contains(&"lint"));
     }
 
     #[test]
@@ -730,13 +774,13 @@ mod cli_tests {
     }
 
     #[test]
-    fn cli_no_args_no_config_errors() {
+    fn cli_no_args_no_config_shows_help() {
         let dir = TempDir::new().unwrap();
         plz()
             .current_dir(dir.path())
             .assert()
-            .failure()
-            .stderr(predicate::str::contains("No plz.toml"));
+            .success()
+            .stdout(predicate::str::contains("Usage:"));
     }
 
     #[test]
