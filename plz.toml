@@ -20,20 +20,16 @@ run = "plz genschema && cargo test"
 
 # Run linting
 [tasks.lint]
-run = "cargo clippy"
+fail_hook = { suggest_command = "cargo clippy --fix --allow-dirty" }
 
 # Check formatting
 [tasks.format]
 run = "cargo fmt --check"
+fail_hook = { suggest_command = "cargo fmt" }
 
 # Check linting and formating
 [tasks.check]
-run_serial = ["plz lint", "plz format"]
-fail_hook = { suggest_command = "plz fix" }
-
-# Fix lint and formatting issues
-[tasks.fix]
-run_serial = ["cargo clippy --fix --allow-dirty", "cargo fmt"]
+run_parallel = ["plz format", "plz lint"]
 
 # Install locally
 [tasks.install]

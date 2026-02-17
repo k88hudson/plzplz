@@ -1,34 +1,25 @@
 # plzplz
 
-A simple cross-platform task runner with helpful defaults. Tasks are stored
-in plz.toml and run with `plz [task]`
-
-```bash
-plz build
-```
-
-```toml
-# Build, development mode
-[tasks.build]
-run = "cargo build && plz schema"
-
-```
-
-## Install
-
 ```bash
 cargo install plzplz
 ```
 
-When you first install plzplz, you can run
+A simple cross-platform task runner with helpful defaults. Tasks are stored
+in a `plz.toml` and run with `plz [task]`
 
-```bash
-plz plz
+![plz init auto-detects your environment and suggests defaults](plzinitdemo.png)
+
+For the following example, `plz format` would run `cargo fmt --check`, and then
+suggest `cargo fmt` if it fails:
+
+```toml
+# Check formatting
+[tasks.format]
+run = "cargo fmt --check"
+fail_hook = { suggest_command = "cargo fmt" }
 ```
 
-to configure some global defaults.
-
-## Add it to a project
+## Add plz to a project
 
 In a rust, uv, or pnpm repo run this to initialize a new `plz.toml`:
 
@@ -41,6 +32,17 @@ To add a new task, you can run:
 ```bash
 plz add [task]
 ```
+
+## Default files
+
+If you run
+
+```bash
+plz plz
+```
+
+plzplz will create files in in ~/.plz that you can add your own default tasks
+to for different environments.
 
 ## TOML Reference
 
