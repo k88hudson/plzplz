@@ -1,5 +1,8 @@
 [package]
 name = "plzplz"
+authors = ["k88hudson"]
+description = "A simple cross-platform task runner with helpful defaults"
+license = "MIT"
 version = "0.0.1"
 edition = "2024"
 
