@@ -1,0 +1,29 @@
+# Run, development mode
+[tasks.dev]
+run = "cargo run"
+
+# Build, development mode
+[tasks.build]
+run = "cargo build"
+
+# Faster way to check for errors
+[tasks.check]
+run = "cargo check"
+
+# Run tests
+[tasks.test]
+run = "cargo test"
+
+# Check linting and formatting
+[tasks.lint]
+run_serial = ["cargo clippy", "cargo fmt --check"]
+fail_hook = { suggest_command = "plz fix" }
+
+# Fix lint and formatting issues
+[tasks.fix]
+run_serial = ["cargo fmt", "cargo clippy --fix --allow-dirty"]
+
+# Build, release mode
+[tasks.release]
+run = "cargo build --release"
+fail_hook = { message = "Try committing changes and then run plz fix" }

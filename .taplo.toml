@@ -1,0 +1,8 @@
+[schema]
+enabled = true
+
+[[rule]]
+include = ["plz.toml", ".plz.toml", "*.plz.toml"]
+
+[rule.schema]
+path = "schema/plz.schema.json"

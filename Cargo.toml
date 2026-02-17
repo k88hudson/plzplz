@@ -1,0 +1,25 @@
+[package]
+name = "plzplz"
+version = "0.0.1"
+edition = "2024"
+
+[[bin]]
+name = "plz"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5.59", features = ["derive"] }
+serde = { version = "1.0.228", features = ["derive"] }
+toml_edit = { version = "0.25.0", features = ["serde"] }
+anyhow = "1"
+cliclack = "0.3.8"
+dirs = "6.0.0"
+is_ci = "1.2.0"
+schemars = "1"
+serde_json = "1"
+crossterm = "0.29.0"
+
+[dev-dependencies]
+tempfile = "3"
+assert_cmd = "2"
+predicates = "3"

@@ -1,0 +1,40 @@
+# Run, development mode
+[tasks.dev]
+run = "cargo run"
+
+# Generate JSON schema for plz.toml
+[tasks.genschema]
+run = "cargo run -- plz schema > schema/plz.schema.json"
+
+# Build, development mode
+[tasks.build]
+run = "cargo build && plz genschema"
+
+# Build, release mode
+[tasks.release]
+run = "cargo build --release && plz genschema"
+
+# Run tests
+[tasks.test]
+run = "plz genschema && cargo test"
+
+# Run linting
+[tasks.lint]
+run = "cargo clippy"
+
+# Check formatting
+[tasks.format]
+run = "cargo fmt --check"
+
+# Check linting and formating
+[tasks.check]
+run_serial = ["plz lint", "plz format"]
+fail_hook = { suggest_command = "plz fix" }
+
+# Fix lint and formatting issues
+[tasks.fix]
+run_serial = ["cargo fmt", "cargo clippy --fix --allow-dirty"]
+
+# Install locally
+[tasks.install]
+run = "cargo install --path . --force"

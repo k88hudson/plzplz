@@ -1,0 +1,28 @@
+# Run in development mode
+[tasks.dev]
+run = "COMMAND"
+env = "uv"
+
+# Build package
+[tasks.build]
+run = "uv build"
+
+# Run tests
+[tasks.test]
+run = "pytest"
+env = "uv"
+
+# Format source files
+[tasks.format]
+run = "ruff format ."
+env = "uv"
+
+# Run linter
+[tasks.lint]
+run = "ruff check ."
+env = "uv"
+
+# Run type checker
+[tasks.check]
+run = "pyright"
+env = "uv"

@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PlzConfig",
+  "type": "object",
+  "properties": {
+    "tasks": {
+      "description": "Tasks to run, keyed by name (e.g. [tasks.build]). Run with `plz <name>`.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/Task"
+      }
+    }
+  },
+  "required": [
+    "tasks"
+  ],
+  "$defs": {
+    "Task": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "description": "Description shown in `plz list`",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "dir": {
+          "description": "Working directory (relative to plz.toml)",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "env": {
+          "description": "Tool environment wrapper: \"pnpm\" (uses `pnpm exec`) or \"uv\" (uses `uv run`)",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "fail_hook": {
+          "description": "Action to take when the task fails: a command string, { suggest_command = \"...\" }, or { message = \"...\" }",
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "description": "Shell command to run on failure",
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "suggest_command": {
+                      "description": "Command to suggest to the user on failure",
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "suggest_command"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "description": "Message to display on failure",
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "message"
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run": {
+          "description": "A single shell command to run",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "run_parallel": {
+          "description": "Multiple commands to run concurrently",
+          "type": [
+            "array",
+            "null"
+          ],
+          "default": null,
+          "items": {
+            "type": "string"
+          }
+        },
+        "run_serial": {
+          "description": "Multiple commands to run one after another (stops on first failure)",
+          "type": [
+            "array",
+            "null"
+          ],
+          "default": null,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

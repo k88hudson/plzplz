@@ -1,0 +1,33 @@
+# Start development server
+[tasks.dev]
+env = "pnpm"
+run = "vite"
+
+# Build for production
+[tasks.build]
+env = "pnpm"
+run = "vite build"
+
+# Preview production build
+[tasks.preview]
+env = "pnpm"
+run = "vite preview"
+
+# Run tests
+[tasks.test]
+env = "pnpm"
+run = "vitest run"
+
+# Format source files
+[tasks.format]
+env = "pnpm"
+run = "prettier ."
+
+[tasks.fix]
+env = "pnpm"
+run = "prettier . --write"
+
+# Run linter
+[tasks.lint]
+env = "pnpm"
+run = "eslint src/"
