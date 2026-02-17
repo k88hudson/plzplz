@@ -1,4 +1,4 @@
-# plz
+# plzplz
 
 A simple cross-platform task runner with helpful defaults. Tasks are stored
 in plz.toml and run with `plz [task]`
@@ -14,13 +14,13 @@ run = "cargo build && plz schema"
 
 ```
 
-## Install plz
+## Install
 
 ```bash
-cargo install plz
+cargo install plzplz
 ```
 
-When you first install plz, you can run
+When you first install plzplz, you can run
 
 ```bash
 plz plz
@@ -28,7 +28,7 @@ plz plz
 
 to configure some global defaults.
 
-## Add plz to a project
+## Add it to a project
 
 In a rust, uv, or pnpm repo run this to initialize a new `plz.toml`:
 
