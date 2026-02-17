@@ -109,10 +109,9 @@ fn main() -> Result<()> {
         Some(path) => path,
         None => {
             if interactive && is_git_repo() {
-                let create: bool =
-                    cliclack::confirm("No plz.toml found. Create one?")
-                        .initial_value(true)
-                        .interact()?;
+                let create: bool = cliclack::confirm("No plz.toml found. Create one?")
+                    .initial_value(true)
+                    .interact()?;
                 if create {
                     return init::run();
                 }
@@ -143,7 +142,7 @@ fn main() -> Result<()> {
             .collect();
         match utils::pick_from_list(&items, "Enter to run · Esc to cancel")? {
             Some(idx) => {
-                return runner::run_task(&config, &names[idx], &base_dir, interactive);
+                return runner::run_task(&config, names[idx], &base_dir, interactive);
             }
             None => {
                 println!("\x1b[2m✕  Cancelled\x1b[0m");
@@ -194,7 +193,7 @@ fn resolve_task(config: &config::PlzConfig, input: &str, interactive: bool) -> R
             }
         }
         _ => {
-            let selected: &&String = cliclack::select(format!("Did you mean..."))
+            let selected: &&String = cliclack::select("Did you mean...".to_string())
                 .items(
                     &matches
                         .iter()

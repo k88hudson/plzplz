@@ -32,9 +32,7 @@ fn extract_tasks(doc: &DocumentMut) -> Vec<(String, Option<String>)> {
 
 pub fn parse_default(toml: &str) -> Option<(DocumentMut, Vec<(String, Option<String>)>)> {
     let doc: DocumentMut = toml.parse().ok()?;
-    if doc.get("tasks").and_then(|t| t.as_table()).is_none() {
-        return None;
-    }
+    doc.get("tasks").and_then(|t| t.as_table())?;
     let tasks = extract_tasks(&doc);
     Some((doc, tasks))
 }
@@ -94,7 +92,11 @@ pub fn generate_scaffold(content: &str) -> String {
     out
 }
 
-pub fn add_suffix_to_toml(toml: &str, suffix: &str, task_names: &[(String, Option<String>)]) -> String {
+pub fn add_suffix_to_toml(
+    toml: &str,
+    suffix: &str,
+    task_names: &[(String, Option<String>)],
+) -> String {
     let mut result = toml.to_string();
     for (name, _) in task_names {
         result = result.replace(
@@ -154,7 +156,12 @@ pub fn run() -> Result<()> {
     let needs_suffix = project_types.len() > 1;
 
     for pt in &project_types {
-        let first_value: Vec<&str> = pt.tasks.first().map(|(name, _)| name.as_str()).into_iter().collect();
+        let first_value: Vec<&str> = pt
+            .tasks
+            .first()
+            .map(|(name, _)| name.as_str())
+            .into_iter()
+            .collect();
         let max_name_len = pt
             .tasks
             .iter()
@@ -424,10 +431,10 @@ fn copy_to_clipboard(text: &str) -> bool {
         return false;
     };
 
-    if let Some(ref mut stdin) = child.stdin {
-        if stdin.write_all(text.as_bytes()).is_err() {
-            return false;
-        }
+    if let Some(ref mut stdin) = child.stdin
+        && stdin.write_all(text.as_bytes()).is_err()
+    {
+        return false;
     }
     child.wait().is_ok_and(|s| s.success())
 }

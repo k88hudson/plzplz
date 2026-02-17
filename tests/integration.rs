@@ -265,7 +265,6 @@ mod runner_tests {
         config::load(&path).unwrap()
     }
 
-
     #[test]
     fn run_simple_command() {
         let dir = TempDir::new().unwrap();

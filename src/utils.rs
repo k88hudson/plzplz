@@ -58,7 +58,11 @@ pub fn pick_from_list(items: &[PickItem], footer_hint: &str) -> Result<Option<us
 
             let mut lines: u16 = 0;
 
-            write!(out, "\x1b[36m◆\x1b[0m  Start typing to match: \x1b[4m{}\x1b[0m\r\n", query)?;
+            write!(
+                out,
+                "\x1b[36m◆\x1b[0m  Start typing to match: \x1b[4m{}\x1b[0m\r\n",
+                query
+            )?;
             lines += 1;
 
             for (i, &idx) in matches.iter().enumerate() {
@@ -75,11 +79,7 @@ pub fn pick_from_list(items: &[PickItem], footer_hint: &str) -> Result<Option<us
                         item.label
                     )?;
                 } else {
-                    write!(
-                        out,
-                        "\x1b[36m│\x1b[0m  ○ {}{desc}\r\n",
-                        item.label
-                    )?;
+                    write!(out, "\x1b[36m│\x1b[0m  ○ {}{desc}\r\n", item.label)?;
                 }
                 lines += 1;
             }
@@ -89,22 +89,19 @@ pub fn pick_from_list(items: &[PickItem], footer_hint: &str) -> Result<Option<us
                 lines += 1;
             }
 
-            if let Some(&idx) = matches.get(cursor_idx) {
-                if let Some(ref preview) = items[idx].preview {
-                    write!(out, "\x1b[36m│\x1b[0m\r\n")?;
+            if let Some(&idx) = matches.get(cursor_idx)
+                && let Some(ref preview) = items[idx].preview
+            {
+                write!(out, "\x1b[36m│\x1b[0m\r\n")?;
+                lines += 1;
+                for line in preview.lines() {
+                    write!(out, "\x1b[36m│\x1b[0m  \x1b[33m{line}\x1b[0m\r\n")?;
                     lines += 1;
-                    for line in preview.lines() {
-                        write!(out, "\x1b[36m│\x1b[0m  \x1b[33m{line}\x1b[0m\r\n")?;
-                        lines += 1;
-                    }
                 }
             }
 
             write!(out, "\x1b[36m│\x1b[0m\r\n")?;
-            write!(
-                out,
-                "\x1b[36m└\x1b[0m  \x1b[2m{footer_hint}\x1b[0m\r\n"
-            )?;
+            write!(out, "\x1b[36m└\x1b[0m  \x1b[2m{footer_hint}\x1b[0m\r\n")?;
             lines += 2;
 
             out.flush()?;
