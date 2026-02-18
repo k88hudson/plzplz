@@ -172,7 +172,8 @@ fn main() -> Result<()> {
     }
 
     let task_name = resolve_task(&config, input, interactive)?;
-    runner::run_task(&config, &task_name, &base_dir, interactive)?;
+    let extra_args = &cli.task[1..];
+    runner::run_task_with_args(&config, &task_name, &base_dir, interactive, extra_args)?;
 
     Ok(())
 }

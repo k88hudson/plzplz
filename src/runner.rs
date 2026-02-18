@@ -9,7 +9,17 @@ pub fn run_task(
     base_dir: &Path,
     interactive: bool,
 ) -> Result<()> {
-    run_task_impl(config, task_name, base_dir, interactive, true)
+    run_task_impl(config, task_name, base_dir, interactive, true, &[])
+}
+
+pub fn run_task_with_args(
+    config: &PlzConfig,
+    task_name: &str,
+    base_dir: &Path,
+    interactive: bool,
+    extra_args: &[String],
+) -> Result<()> {
+    run_task_impl(config, task_name, base_dir, interactive, true, extra_args)
 }
 
 fn run_task_impl(
@@ -18,6 +28,7 @@ fn run_task_impl(
     base_dir: &Path,
     interactive: bool,
     run_hooks: bool,
+    extra_args: &[String],
 ) -> Result<()> {
     let task = config
         .tasks
@@ -39,7 +50,14 @@ fn run_task_impl(
 
     let result: Result<()> = (|| {
         if let Some(ref cmd) = task.run {
-            run_command_or_ref(config, &wrap(cmd), &work_dir, base_dir, interactive)?;
+            let wrapped = if extra_args.is_empty() {
+                wrap(cmd)
+            } else {
+                let args_str = shlex::try_join(extra_args.iter().map(|s| s.as_str()))
+                    .map_err(|e| anyhow::anyhow!("Failed to escape arguments: {e}"))?;
+                format!("{} {args_str}", wrap(cmd))
+            };
+            run_command_or_ref(config, &wrapped, &work_dir, base_dir, interactive)?;
         }
 
         if let Some(ref cmds) = task.run_serial {
@@ -174,7 +192,7 @@ fn run_serial_commands(
     for cmd in cmds {
         let wrapped = wrap(cmd);
         if let Some(ref_name) = wrapped.strip_prefix("plz:") {
-            match run_task_impl(config, ref_name, base_dir, interactive, false) {
+            match run_task_impl(config, ref_name, base_dir, interactive, false, &[]) {
                 Ok(()) => task_results.push((ref_name.to_string(), true)),
                 Err(e) => {
                     task_results.push((ref_name.to_string(), false));
@@ -229,7 +247,7 @@ fn run_parallel_commands(
     let mut failures: Vec<DeferredFailure> = Vec::new();
 
     for ref_name in &plz_refs {
-        match run_task_impl(config, ref_name, base_dir, interactive, false) {
+        match run_task_impl(config, ref_name, base_dir, interactive, false, &[]) {
             Ok(()) => task_results.push((ref_name.clone(), true)),
             Err(e) => {
                 task_results.push((ref_name.clone(), false));
