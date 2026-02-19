@@ -761,6 +761,292 @@ run = "cargo test"
     }
 }
 
+mod hooks_tests {
+    use super::*;
+    use plzplz::config;
+    use plzplz::hooks;
+
+    fn write_config(dir: &TempDir, content: &str) -> std::path::PathBuf {
+        let path = dir.path().join("plz.toml");
+        fs::write(&path, content).unwrap();
+        path
+    }
+
+    fn init_git_repo(dir: &TempDir) {
+        fs::create_dir_all(dir.path().join(".git/hooks")).unwrap();
+    }
+
+    #[test]
+    fn parse_git_hook_field() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.lint]
+run = "cargo clippy"
+git_hook = "pre-commit"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        assert_eq!(cfg.tasks["lint"].git_hook.as_deref(), Some("pre-commit"));
+    }
+
+    #[test]
+    fn reject_invalid_git_hook() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.lint]
+run = "cargo clippy"
+git_hook = "not-a-real-hook"
+"#,
+        );
+        let err = config::load(&path).unwrap_err();
+        assert!(err.to_string().contains("invalid git_hook"), "got: {err}");
+    }
+
+    #[test]
+    fn tasks_by_stage_groups_correctly() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.lint]
+run = "cargo clippy"
+git_hook = "pre-commit"
+
+[tasks.fmt]
+run = "cargo fmt --check"
+git_hook = "pre-commit"
+
+[tasks.test]
+run = "cargo test"
+git_hook = "pre-push"
+
+[tasks.build]
+run = "cargo build"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        let stages = hooks::tasks_by_stage(&cfg);
+        assert_eq!(stages.len(), 2);
+        assert_eq!(stages["pre-commit"].len(), 2);
+        assert!(stages["pre-commit"].contains(&"lint".to_string()));
+        assert!(stages["pre-commit"].contains(&"fmt".to_string()));
+        assert_eq!(stages["pre-push"], vec!["test"]);
+    }
+
+    #[test]
+    fn install_creates_hook_scripts() {
+        let dir = TempDir::new().unwrap();
+        init_git_repo(&dir);
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.lint]
+run = "cargo clippy"
+git_hook = "pre-commit"
+
+[tasks.test]
+run = "cargo test"
+git_hook = "pre-push"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        hooks::install(&cfg, dir.path()).unwrap();
+
+        let pre_commit = dir.path().join(".git/hooks/pre-commit");
+        let pre_push = dir.path().join(".git/hooks/pre-push");
+        assert!(pre_commit.exists());
+        assert!(pre_push.exists());
+
+        let content = fs::read_to_string(&pre_commit).unwrap();
+        assert!(content.contains("plz:managed"));
+        assert!(content.contains("plz hook run pre-commit"));
+
+        let content = fs::read_to_string(&pre_push).unwrap();
+        assert!(content.contains("plz hook run pre-push"));
+    }
+
+    #[test]
+    fn install_skips_non_managed_hooks() {
+        let dir = TempDir::new().unwrap();
+        init_git_repo(&dir);
+
+        let existing_hook = dir.path().join(".git/hooks/pre-commit");
+        fs::write(&existing_hook, "#!/bin/sh\necho my custom hook\n").unwrap();
+
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.lint]
+run = "cargo clippy"
+git_hook = "pre-commit"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        hooks::install(&cfg, dir.path()).unwrap();
+
+        let content = fs::read_to_string(&existing_hook).unwrap();
+        assert!(
+            content.contains("my custom hook"),
+            "Should not overwrite user hook"
+        );
+        assert!(!content.contains("plz:managed"));
+    }
+
+    #[test]
+    fn install_overwrites_managed_hooks() {
+        let dir = TempDir::new().unwrap();
+        init_git_repo(&dir);
+
+        let hook_path = dir.path().join(".git/hooks/pre-commit");
+        fs::write(
+            &hook_path,
+            "#!/bin/sh\n# plz:managed - do not edit\nplz hook run pre-commit\n",
+        )
+        .unwrap();
+
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.lint]
+run = "cargo clippy"
+git_hook = "pre-commit"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        hooks::install(&cfg, dir.path()).unwrap();
+
+        let content = fs::read_to_string(&hook_path).unwrap();
+        assert!(content.contains("plz:managed"));
+    }
+
+    #[test]
+    fn uninstall_removes_managed_hooks() {
+        let dir = TempDir::new().unwrap();
+        init_git_repo(&dir);
+
+        let hook_path = dir.path().join(".git/hooks/pre-commit");
+        fs::write(
+            &hook_path,
+            "#!/bin/sh\n# plz:managed - do not edit\nplz hook run pre-commit\n",
+        )
+        .unwrap();
+
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.lint]
+run = "cargo clippy"
+git_hook = "pre-commit"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        hooks::uninstall(&cfg, dir.path()).unwrap();
+
+        assert!(!hook_path.exists());
+    }
+
+    #[test]
+    fn uninstall_skips_non_managed_hooks() {
+        let dir = TempDir::new().unwrap();
+        init_git_repo(&dir);
+
+        let hook_path = dir.path().join(".git/hooks/pre-commit");
+        fs::write(&hook_path, "#!/bin/sh\necho custom\n").unwrap();
+
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.lint]
+run = "cargo clippy"
+git_hook = "pre-commit"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        hooks::uninstall(&cfg, dir.path()).unwrap();
+
+        assert!(hook_path.exists(), "Should not remove non-managed hook");
+    }
+
+    #[test]
+    fn find_git_hooks_dir_walks_up() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join(".git/hooks")).unwrap();
+        let subdir = dir.path().join("a/b/c");
+        fs::create_dir_all(&subdir).unwrap();
+
+        let result = hooks::find_git_hooks_dir(&subdir).unwrap();
+        assert_eq!(result, dir.path().join(".git/hooks"));
+    }
+
+    #[test]
+    fn find_git_hooks_dir_fails_without_git() {
+        let dir = TempDir::new().unwrap();
+        assert!(hooks::find_git_hooks_dir(dir.path()).is_err());
+    }
+
+    #[test]
+    fn run_stage_executes_tasks() {
+        let dir = TempDir::new().unwrap();
+        let marker = dir.path().join("hook_ran.txt");
+        let path = write_config(
+            &dir,
+            &format!(
+                r#"
+[tasks.check]
+run = "touch {}"
+git_hook = "pre-commit"
+"#,
+                marker.display()
+            ),
+        );
+        let cfg = config::load(&path).unwrap();
+        hooks::run_stage(&cfg, "pre-commit", dir.path(), false).unwrap();
+        assert!(marker.exists());
+    }
+
+    #[test]
+    fn run_stage_unknown_stage_errors() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.check]
+run = "echo hi"
+git_hook = "pre-commit"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        let err = hooks::run_stage(&cfg, "pre-push", dir.path(), false);
+        assert!(err.is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn install_sets_executable_permission() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = TempDir::new().unwrap();
+        init_git_repo(&dir);
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.lint]
+run = "cargo clippy"
+git_hook = "pre-commit"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        hooks::install(&cfg, dir.path()).unwrap();
+
+        let hook_path = dir.path().join(".git/hooks/pre-commit");
+        let perms = fs::metadata(&hook_path).unwrap().permissions();
+        assert!(perms.mode() & 0o111 != 0, "Hook should be executable");
+    }
+}
+
 mod cli_tests {
     use assert_cmd::Command;
     use predicates::prelude::*;

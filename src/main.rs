@@ -1,4 +1,5 @@
 mod config;
+mod hooks;
 mod init;
 mod runner;
 mod templates;
@@ -45,6 +46,24 @@ enum Command {
     },
     /// Browse and copy example task snippets
     Example,
+    /// Install or manage git hooks
+    Hook {
+        #[command(subcommand)]
+        hook_command: Option<HookCommand>,
+    },
+}
+
+#[derive(Subcommand)]
+enum HookCommand {
+    /// Install git hooks from plz.toml
+    Install,
+    /// Uninstall plz-managed git hooks
+    Uninstall,
+    /// Run all tasks for a git hook stage (called by hook scripts)
+    Run {
+        /// The git hook stage to run (e.g. pre-commit)
+        stage: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -113,6 +132,31 @@ fn main() -> Result<()> {
             }
             None => return init::setup(),
         },
+        Some(Command::Hook { ref hook_command }) => {
+            let config_path = find_config().ok_or_else(|| anyhow::anyhow!("No plz.toml found"))?;
+            let config = config::load(&config_path)?;
+            let base_dir = config_path.parent().unwrap().to_path_buf();
+            let interactive = is_interactive(&cli);
+            match hook_command {
+                Some(HookCommand::Install) => return hooks::install(&config, &base_dir),
+                Some(HookCommand::Uninstall) => return hooks::uninstall(&config, &base_dir),
+                Some(HookCommand::Run { stage }) => {
+                    return hooks::run_stage(&config, stage, &base_dir, interactive);
+                }
+                None => {
+                    hooks::status(&config, &base_dir)?;
+                    if interactive {
+                        let install: bool = cliclack::confirm("Install hooks?")
+                            .initial_value(true)
+                            .interact()?;
+                        if install {
+                            return hooks::install(&config, &base_dir);
+                        }
+                    }
+                    return Ok(());
+                }
+            }
+        }
         None => {}
     }
 

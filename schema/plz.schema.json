@@ -84,6 +84,14 @@
             }
           ]
         },
+        "git_hook": {
+          "description": "Git hook stage to associate this task with (e.g. \"pre-commit\", \"pre-push\")",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
         "run": {
           "description": "A single shell command to run",
           "type": [

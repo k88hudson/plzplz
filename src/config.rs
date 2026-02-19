@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use schemars::{JsonSchema, SchemaGenerator, json_schema};
 use serde::Deserialize;
 use serde::de::{self, Deserializer, Visitor};
@@ -7,6 +7,28 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 use toml_edit::DocumentMut;
+
+pub const VALID_GIT_HOOKS: &[&str] = &[
+    "applypatch-msg",
+    "pre-applypatch",
+    "post-applypatch",
+    "pre-commit",
+    "prepare-commit-msg",
+    "commit-msg",
+    "post-commit",
+    "pre-rebase",
+    "post-checkout",
+    "post-merge",
+    "pre-push",
+    "pre-receive",
+    "update",
+    "post-receive",
+    "post-update",
+    "push-to-checkout",
+    "pre-auto-gc",
+    "post-rewrite",
+    "sendemail-validate",
+];
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct PlzConfig {
@@ -38,6 +60,9 @@ pub struct Task {
     /// Description shown in `plz list`
     #[serde(default)]
     pub description: Option<String>,
+    /// Git hook stage to associate this task with (e.g. "pre-commit", "pre-push")
+    #[serde(default)]
+    pub git_hook: Option<String>,
 }
 
 #[derive(Debug)]
@@ -159,6 +184,18 @@ pub fn load(path: &Path) -> Result<PlzConfig> {
                 && let Some(prefix) = decor.prefix().and_then(|p| p.as_str())
             {
                 task.description = extract_comment(prefix);
+            }
+        }
+    }
+
+    // Validate git_hook values
+    for (name, task) in &config.tasks {
+        if let Some(ref hook) = task.git_hook {
+            if !VALID_GIT_HOOKS.contains(&hook.as_str()) {
+                bail!(
+                    "Task \"{name}\" has invalid git_hook \"{hook}\". Valid hooks: {}",
+                    VALID_GIT_HOOKS.join(", ")
+                );
             }
         }
     }
