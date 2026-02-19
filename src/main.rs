@@ -2,6 +2,7 @@ mod config;
 mod hooks;
 mod init;
 mod runner;
+mod settings;
 mod templates;
 mod utils;
 
@@ -75,9 +76,16 @@ enum PlzCommand {
     Schema,
 }
 
+fn is_nested() -> bool {
+    env::var_os("PLZ_COMMAND").is_some()
+}
+
 fn is_interactive(cli: &Cli) -> bool {
     if cli.no_interactive {
         eprintln!("Skipping interactive prompts");
+        return false;
+    }
+    if is_nested() {
         return false;
     }
     if is_ci::cached() {
@@ -147,16 +155,7 @@ fn main() -> Result<()> {
                     return hooks::run_stage(&config, stage, &base_dir, interactive, args);
                 }
                 None => {
-                    hooks::status(&config, &base_dir)?;
-                    if interactive {
-                        let install: bool = cliclack::confirm("Install hooks?")
-                            .initial_value(true)
-                            .interact()?;
-                        if install {
-                            return hooks::install(&config, &base_dir);
-                        }
-                    }
-                    return Ok(());
+                    return hooks::interactive_install(&config, &base_dir, interactive);
                 }
             }
         }
@@ -202,7 +201,9 @@ fn main() -> Result<()> {
             .collect();
         match utils::pick_from_list(&items, "Enter to run · Esc to cancel")? {
             Some(idx) => {
-                return runner::run_task(&config, names[idx], &base_dir, interactive);
+                runner::run_task(&config, names[idx], &base_dir, interactive)?;
+                hooks::hint_uninstalled_hooks(&config, &base_dir);
+                return Ok(());
             }
             None => {
                 println!("\x1b[2m✕  Cancelled\x1b[0m");
@@ -221,6 +222,7 @@ fn main() -> Result<()> {
     let task_name = resolve_task(&config, input, interactive)?;
     let extra_args = &cli.task[1..];
     runner::run_task_with_args(&config, &task_name, &base_dir, interactive, extra_args)?;
+    hooks::hint_uninstalled_hooks(&config, &base_dir);
 
     Ok(())
 }

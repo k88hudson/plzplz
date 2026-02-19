@@ -1,4 +1,5 @@
 use crate::config::PlzConfig;
+use crate::settings;
 use anyhow::{Result, bail};
 use std::collections::BTreeMap;
 use std::fs;
@@ -160,6 +161,76 @@ pub fn status(config: &PlzConfig, base_dir: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn has_uninstalled_hooks(config: &PlzConfig, base_dir: &Path) -> bool {
+    let stages = tasks_by_stage(config);
+    if stages.is_empty() {
+        return false;
+    }
+    let Ok(hooks_dir) = find_git_hooks_dir(base_dir) else {
+        return false;
+    };
+    stages.keys().any(|stage| {
+        let p = hooks_dir.join(stage);
+        !p.exists() || !is_plz_managed(&p)
+    })
+}
+
+/// Show a grey tip if hooks are configured but not installed.
+pub fn hint_uninstalled_hooks(config: &PlzConfig, base_dir: &Path) {
+    if std::env::var_os("PLZ_COMMAND").is_some() {
+        return;
+    }
+    if !settings::load().show_hints {
+        return;
+    }
+    if has_uninstalled_hooks(config, base_dir) {
+        eprintln!(
+            "\x1b[2mYour plz.toml has git hooks but they are not installed. Run `plz hooks` to install them.\x1b[0m"
+        );
+    }
+}
+
+/// Interactive hook install prompt (for `plz hooks` with no subcommand).
+/// Shows status, then offers yes/no install.
+pub fn interactive_install(config: &PlzConfig, base_dir: &Path, interactive: bool) -> Result<()> {
+    status(config, base_dir)?;
+
+    if !has_uninstalled_hooks(config, base_dir) {
+        return Ok(());
+    }
+
+    if !interactive {
+        return Ok(());
+    }
+
+    let should_install: bool = cliclack::confirm("Install hooks?")
+        .initial_value(true)
+        .interact()?;
+
+    if should_install {
+        install(config, base_dir)?;
+    }
+
+    Ok(())
+}
+
+/// Variant that auto-discovers config from cwd (for `plz plz`).
+pub fn interactive_install_for_cwd() -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let config_path = ["plz.toml", ".plz.toml"]
+        .iter()
+        .map(|n| cwd.join(n))
+        .find(|p| p.exists());
+
+    let Some(config_path) = config_path else {
+        return Ok(());
+    };
+
+    let cfg = crate::config::load(&config_path)?;
+    let base_dir = config_path.parent().unwrap();
+    interactive_install(&cfg, base_dir, true)
 }
 
 #[cfg(test)]

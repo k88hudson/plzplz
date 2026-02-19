@@ -1,7 +1,9 @@
 use crate::config;
 use crate::hooks;
+use crate::settings;
 pub use crate::templates::DEFAULTS;
 use anyhow::{Result, bail};
+use std::collections::HashMap;
 use std::env;
 use std::fmt::Write as _;
 use std::io::Write;
@@ -39,11 +41,7 @@ pub fn parse_default(toml: &str) -> Option<(DocumentMut, Vec<(String, Option<Str
 }
 
 fn config_dir() -> Option<PathBuf> {
-    if let Ok(dir) = env::var("PLZ_CONFIG_DIR") {
-        Some(PathBuf::from(dir))
-    } else {
-        dirs::home_dir().map(|h| h.join(".plz"))
-    }
+    settings::config_dir()
 }
 
 pub fn merge_defaults(
@@ -221,6 +219,82 @@ pub fn run() -> Result<()> {
         return Ok(());
     }
 
+    // Offer git hook setup if in a git repo
+    let in_git_repo = hooks::find_git_hooks_dir(&cwd).is_ok();
+    if in_git_repo && let Ok(mut doc) = output.parse::<DocumentMut>() {
+        let task_names: Vec<String> = doc
+            .get("tasks")
+            .and_then(|t| t.as_table())
+            .map(|t| t.iter().map(|(k, _)| k.to_string()).collect())
+            .unwrap_or_default();
+
+        if !task_names.is_empty() {
+            let hook_stages: Vec<&str> = cliclack::multiselect("Add git hooks?")
+                .items(&[
+                    ("pre-commit", "pre-commit", "Run before each commit"),
+                    ("pre-push", "pre-push", "Run before each push"),
+                ])
+                .required(false)
+                .interact()?;
+
+            // Track which tasks are already assigned to a stage so we can
+            // duplicate them with a suffix when they appear in a second stage.
+            let mut first_stage: HashMap<String, String> = HashMap::new();
+            let mut changed = false;
+            for stage in &hook_stages {
+                let selected_hooks: Vec<&str> =
+                    cliclack::multiselect(format!("Which tasks for {stage}?"))
+                        .items(
+                            &task_names
+                                .iter()
+                                .map(|n| (n.as_str(), n.as_str(), ""))
+                                .collect::<Vec<_>>(),
+                        )
+                        .required(false)
+                        .interact()?;
+
+                if let Some(tasks_table) = doc.get_mut("tasks").and_then(|v| v.as_table_mut()) {
+                    for task_name in &selected_hooks {
+                        if let Some(prev_stage) = first_stage.get(*task_name) {
+                            // Task already assigned to another stage — duplicate it
+                            // with the previous stage as suffix, and keep the original
+                            // name for this stage.
+                            let suffixed = format!("{task_name}-{prev_stage}");
+                            if let Some(original) = tasks_table.get(task_name).cloned() {
+                                tasks_table.insert(&suffixed, original);
+                            }
+                            if let Some(task) = tasks_table
+                                .get_mut(task_name)
+                                .and_then(|v| v.as_table_mut())
+                            {
+                                task.insert("git_hook", toml_edit::value(stage.to_string()));
+                            }
+                            if let Some(dup) = tasks_table
+                                .get_mut(&suffixed)
+                                .and_then(|v| v.as_table_mut())
+                            {
+                                dup.insert("git_hook", toml_edit::value(prev_stage.to_string()));
+                            }
+                        } else {
+                            if let Some(task) = tasks_table
+                                .get_mut(task_name)
+                                .and_then(|v| v.as_table_mut())
+                            {
+                                task.insert("git_hook", toml_edit::value(stage.to_string()));
+                            }
+                            first_stage.insert(task_name.to_string(), stage.to_string());
+                        }
+                        changed = true;
+                    }
+                }
+            }
+
+            if changed {
+                output = doc.to_string();
+            }
+        }
+    }
+
     std::fs::write(&config_path, output.trim_end())?;
 
     let defaults_dir = config_dir().map(|d| d.join("defaults"));
@@ -234,6 +308,14 @@ pub fn run() -> Result<()> {
     }
 
     cliclack::outro("Created plz.toml".to_string())?;
+
+    // Install hooks if any were configured
+    if in_git_repo
+        && let Ok(ref cfg) = config::load(&config_path)
+        && !hooks::tasks_by_stage(cfg).is_empty()
+    {
+        hooks::install(cfg, &cwd)?;
+    }
 
     Ok(())
 }
@@ -441,9 +523,9 @@ fn copy_to_clipboard(text: &str) -> bool {
 }
 
 pub fn setup() -> Result<()> {
-    let defaults_dir = config_dir()
-        .ok_or_else(|| anyhow::anyhow!("Could not determine config directory"))?
-        .join("defaults");
+    let plz_dir =
+        config_dir().ok_or_else(|| anyhow::anyhow!("Could not determine config directory"))?;
+    let defaults_dir = plz_dir.join("defaults");
 
     cliclack::intro("🙏 plz plz 🙏")?;
 
@@ -484,64 +566,7 @@ pub fn setup() -> Result<()> {
         }
     }
 
-    prompt_install_hooks()?;
-
-    Ok(())
-}
-
-fn prompt_install_hooks() -> Result<()> {
-    let cwd = env::current_dir()?;
-    let config_path = ["plz.toml", ".plz.toml"]
-        .iter()
-        .map(|n| cwd.join(n))
-        .find(|p| p.exists());
-
-    let Some(config_path) = config_path else {
-        return Ok(());
-    };
-
-    let cfg = config::load(&config_path)?;
-    let base_dir = config_path.parent().unwrap();
-    let stages = hooks::tasks_by_stage(&cfg);
-    if stages.is_empty() {
-        return Ok(());
-    }
-
-    let hooks_dir = match hooks::find_git_hooks_dir(base_dir) {
-        Ok(dir) => dir,
-        Err(_) => return Ok(()),
-    };
-
-    let uninstalled: Vec<_> = stages
-        .iter()
-        .filter(|(stage, _)| {
-            let p = hooks_dir.join(stage);
-            !p.exists()
-                || !std::fs::read_to_string(&p)
-                    .map(|c| c.contains("plz:managed"))
-                    .unwrap_or(false)
-        })
-        .collect();
-
-    if uninstalled.is_empty() {
-        return Ok(());
-    }
-
-    eprintln!();
-    let hook_list: Vec<String> = uninstalled
-        .iter()
-        .map(|(stage, tasks)| format!("{stage} ({})", tasks.join(", ")))
-        .collect();
-    let install: bool = cliclack::confirm(format!(
-        "Git hooks not installed: {}. Install them?",
-        hook_list.join(", ")
-    ))
-    .initial_value(true)
-    .interact()?;
-
-    if install {
-        hooks::install(&cfg, base_dir)?;
-    }
+    hooks::interactive_install_for_cwd()?;
 
     Ok(())
 }

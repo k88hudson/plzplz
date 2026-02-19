@@ -103,6 +103,7 @@ fn exec_shell(cmd: &str, work_dir: &Path) -> Result<()> {
         .arg("-c")
         .arg(cmd)
         .current_dir(work_dir)
+        .env("PLZ_COMMAND", "1")
         .status()?;
 
     if !status.success() {
@@ -238,6 +239,7 @@ fn run_parallel_commands(
                 .arg("-c")
                 .arg(&wrapped)
                 .current_dir(work_dir)
+                .env("PLZ_COMMAND", "1")
                 .spawn()?;
             children.push((wrapped, child));
         }
