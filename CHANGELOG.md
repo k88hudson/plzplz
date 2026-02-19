@@ -11,23 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- add publishing via pypi
-- add plz hooks
-- add hooks
+- Added support for git hooks
+- Publishing via pypi
+- Some additional hints
+
 
 ### Fixed
 
-- integration tests
-- add hooks upgrade detection
-- fix hooks args
-- added hooks hints
-- lint errors
-- support env in hooks
-
-### Other
-
-- try a different approach for integration test
-- updated plz install command
-- pretty intro for hooks
-- added support for user args
-- release plz
+- Issue with environments not being added to failure hooks
