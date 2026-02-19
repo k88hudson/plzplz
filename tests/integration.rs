@@ -1004,36 +1004,8 @@ git_hook = "pre-commit"
             ),
         );
         let cfg = config::load(&path).unwrap();
-        hooks::run_stage(&cfg, "pre-commit", dir.path(), false, &[]).unwrap();
+        hooks::run_stage(&cfg, "pre-commit", dir.path(), false).unwrap();
         assert!(marker.exists());
-    }
-
-    #[test]
-    fn run_stage_forwards_args_to_tasks() {
-        let dir = TempDir::new().unwrap();
-        let out = dir.path().join("args_out.txt");
-        let path = write_config(
-            &dir,
-            &format!(
-                r#"
-[tasks.check-msg]
-run = "echo $1 > {}"
-git_hook = "commit-msg"
-"#,
-                out.display()
-            ),
-        );
-        let cfg = config::load(&path).unwrap();
-        hooks::run_stage(
-            &cfg,
-            "commit-msg",
-            dir.path(),
-            false,
-            &["/tmp/COMMIT_EDITMSG".to_string()],
-        )
-        .unwrap();
-        let content = fs::read_to_string(&out).unwrap();
-        assert!(content.contains("/tmp/COMMIT_EDITMSG"), "got: {content}");
     }
 
     #[test]
@@ -1057,7 +1029,10 @@ git_hook = "pre-commit"
             content.contains("command -v plz"),
             "missing not-in-PATH fallback"
         );
-        assert!(content.contains("\"$@\""), "missing arg passthrough");
+        assert!(
+            !content.contains("\"$@\""),
+            "should not pass git args to tasks"
+        );
     }
 
     #[test]
@@ -1073,7 +1048,7 @@ git_hook = "pre-commit"
         );
         let cfg = config::load(&path).unwrap();
         // No tasks configured for pre-push — should succeed silently
-        hooks::run_stage(&cfg, "pre-push", dir.path(), false, &[]).unwrap();
+        hooks::run_stage(&cfg, "pre-push", dir.path(), false).unwrap();
     }
 
     #[cfg(unix)]

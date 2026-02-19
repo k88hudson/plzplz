@@ -41,7 +41,7 @@ fn generate_hook_script(stage: &str) -> String {
          {MANAGED_MARKER}\n\
          [ \"${{PLZ_SKIP_HOOKS}}\" = \"1\" ] && exit 0\n\
          command -v plz >/dev/null 2>&1 || {{ echo \"plz not found in PATH, skipping {stage} hook\" >&2; exit 0; }}\n\
-         plz --no-interactive hooks run {stage} \"$@\"\n"
+         plz --no-interactive hooks run {stage}\n"
     )
 }
 
@@ -113,13 +113,11 @@ pub fn uninstall(config: &PlzConfig, base_dir: &Path) -> Result<()> {
 }
 
 /// Run all tasks for a given git hook stage (called by the hook script itself).
-/// `extra_args` are forwarded to each task (e.g. commit message file path for commit-msg hooks).
 pub fn run_stage(
     config: &PlzConfig,
     stage: &str,
     base_dir: &Path,
     interactive: bool,
-    extra_args: &[String],
 ) -> Result<()> {
     let stages = tasks_by_stage(config);
     let task_names = match stages.get(stage) {
@@ -131,7 +129,7 @@ pub fn run_stage(
     eprintln!("\x1b[36m🙏 Running {stage} hook ({names})\x1b[0m");
 
     for name in task_names {
-        crate::runner::run_task_with_args(config, name, base_dir, interactive, extra_args)?;
+        crate::runner::run_task(config, name, base_dir, interactive)?;
     }
     eprintln!("\x1b[32m✓ {stage} hook passed\x1b[0m");
     Ok(())
@@ -246,7 +244,7 @@ mod tests {
         let script = generate_hook_script("pre-commit");
         assert!(script.starts_with("#!/bin/sh\n"));
         assert!(script.contains(MANAGED_MARKER));
-        assert!(script.contains("plz --no-interactive hooks run pre-commit \"$@\""));
+        assert!(script.contains("plz --no-interactive hooks run pre-commit"));
         assert!(script.contains("PLZ_SKIP_HOOKS"));
         assert!(script.contains("command -v plz"));
     }
@@ -254,7 +252,7 @@ mod tests {
     #[test]
     fn test_generate_hook_script_commit_msg() {
         let script = generate_hook_script("commit-msg");
-        assert!(script.contains("plz --no-interactive hooks run commit-msg \"$@\""));
+        assert!(script.contains("plz --no-interactive hooks run commit-msg"));
     }
 
     #[test]

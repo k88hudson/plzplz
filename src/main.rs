@@ -150,8 +150,8 @@ fn main() -> Result<()> {
             match hook_command {
                 Some(HookCommand::Install) => return hooks::install(&config, &base_dir),
                 Some(HookCommand::Uninstall) => return hooks::uninstall(&config, &base_dir),
-                Some(HookCommand::Run { stage, args }) => {
-                    return hooks::run_stage(&config, stage, &base_dir, interactive, args);
+                Some(HookCommand::Run { stage, .. }) => {
+                    return hooks::run_stage(&config, stage, &base_dir, interactive);
                 }
                 None => {
                     return hooks::interactive_install(&config, &base_dir, interactive);
