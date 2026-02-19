@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const MANAGED_MARKER: &str = "# plz:managed - do not edit";
+const HOOKS_VERSION: u32 = 2;
 
 pub fn find_git_hooks_dir(base_dir: &Path) -> Result<PathBuf> {
     let mut dir = base_dir;
@@ -39,10 +40,25 @@ fn generate_hook_script(stage: &str) -> String {
     format!(
         "#!/bin/sh\n\
          {MANAGED_MARKER}\n\
+         # plz:hooks_version={HOOKS_VERSION}\n\
          [ \"${{PLZ_SKIP_HOOKS}}\" = \"1\" ] && exit 0\n\
          command -v plz >/dev/null 2>&1 || {{ echo \"plz not found in PATH, skipping {stage} hook\" >&2; exit 0; }}\n\
          plz --no-interactive hooks run {stage}\n"
     )
+}
+
+fn installed_hook_version(path: &Path) -> Option<u32> {
+    let content = fs::read_to_string(path).ok()?;
+    for line in content.lines() {
+        if let Some(v) = line.strip_prefix("# plz:hooks_version=") {
+            return v.trim().parse().ok();
+        }
+    }
+    // Managed hook without a version tag is v1
+    if content.contains(MANAGED_MARKER) {
+        return Some(1);
+    }
+    None
 }
 
 fn is_plz_managed(path: &Path) -> bool {
@@ -146,23 +162,30 @@ pub fn status(config: &PlzConfig, base_dir: &Path) -> Result<()> {
 
     for (stage, task_names) in &stages {
         let names = task_names.join(", ");
-        let installed = hooks_dir
-            .as_ref()
-            .map(|d| {
+        let (status_icon, suffix) = match hooks_dir.as_ref() {
+            Some(d) => {
                 let p = d.join(stage);
-                p.exists() && is_plz_managed(&p)
-            })
-            .unwrap_or(false);
-
-        let status_icon = if installed {
-            "\x1b[32m✓\x1b[0m"
-        } else {
-            "\x1b[2m·\x1b[0m"
+                if !p.exists() || !is_plz_managed(&p) {
+                    ("\x1b[2m·\x1b[0m", "")
+                } else if installed_hook_version(&p).unwrap_or(0) < HOOKS_VERSION {
+                    ("\x1b[33m↑\x1b[0m", " \x1b[33m(outdated)\x1b[0m")
+                } else {
+                    ("\x1b[32m✓\x1b[0m", "")
+                }
+            }
+            None => ("\x1b[2m·\x1b[0m", ""),
         };
-        eprintln!("{status_icon} {stage}: {names}");
+        eprintln!("{status_icon} {stage}: {names}{suffix}");
     }
 
     Ok(())
+}
+
+fn hook_needs_install(path: &Path) -> bool {
+    if !path.exists() || !is_plz_managed(path) {
+        return true;
+    }
+    installed_hook_version(path).unwrap_or(0) < HOOKS_VERSION
 }
 
 fn has_uninstalled_hooks(config: &PlzConfig, base_dir: &Path) -> bool {
@@ -173,10 +196,9 @@ fn has_uninstalled_hooks(config: &PlzConfig, base_dir: &Path) -> bool {
     let Ok(hooks_dir) = find_git_hooks_dir(base_dir) else {
         return false;
     };
-    stages.keys().any(|stage| {
-        let p = hooks_dir.join(stage);
-        !p.exists() || !is_plz_managed(&p)
-    })
+    stages
+        .keys()
+        .any(|stage| hook_needs_install(&hooks_dir.join(stage)))
 }
 
 /// Show a grey tip if hooks are configured but not installed.
@@ -189,7 +211,7 @@ pub fn hint_uninstalled_hooks(config: &PlzConfig, base_dir: &Path) {
     }
     if has_uninstalled_hooks(config, base_dir) {
         eprintln!(
-            "\x1b[2mYour plz.toml has git hooks but they are not installed. Run `plz hooks` to install them.\x1b[0m"
+            "\x1b[2mYour plz.toml has git hooks that need to be installed or updated. Run `plz hooks` to install them.\x1b[0m"
         );
     }
 }
@@ -244,6 +266,7 @@ mod tests {
         let script = generate_hook_script("pre-commit");
         assert!(script.starts_with("#!/bin/sh\n"));
         assert!(script.contains(MANAGED_MARKER));
+        assert!(script.contains(&format!("# plz:hooks_version={HOOKS_VERSION}")));
         assert!(script.contains("plz --no-interactive hooks run pre-commit"));
         assert!(script.contains("PLZ_SKIP_HOOKS"));
         assert!(script.contains("command -v plz"));
@@ -253,6 +276,41 @@ mod tests {
     fn test_generate_hook_script_commit_msg() {
         let script = generate_hook_script("commit-msg");
         assert!(script.contains("plz --no-interactive hooks run commit-msg"));
+    }
+
+    #[test]
+    fn test_installed_hook_version_current() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("pre-commit");
+        fs::write(&path, generate_hook_script("pre-commit")).unwrap();
+        assert_eq!(installed_hook_version(&path), Some(HOOKS_VERSION));
+    }
+
+    #[test]
+    fn test_installed_hook_version_v1() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("pre-commit");
+        fs::write(
+            &path,
+            format!("#!/bin/sh\n{MANAGED_MARKER}\nplz hooks run pre-commit \"$@\"\n"),
+        )
+        .unwrap();
+        assert_eq!(installed_hook_version(&path), Some(1));
+    }
+
+    #[test]
+    fn test_installed_hook_version_not_managed() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("pre-commit");
+        fs::write(&path, "#!/bin/sh\necho custom\n").unwrap();
+        assert_eq!(installed_hook_version(&path), None);
+    }
+
+    #[test]
+    fn test_installed_hook_version_missing() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("nonexistent");
+        assert_eq!(installed_hook_version(&path), None);
     }
 
     #[test]

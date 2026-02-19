@@ -1033,6 +1033,43 @@ git_hook = "pre-commit"
             !content.contains("\"$@\""),
             "should not pass git args to tasks"
         );
+        assert!(
+            content.contains("plz:hooks_version="),
+            "missing hooks version marker"
+        );
+    }
+
+    #[test]
+    fn install_upgrades_outdated_hooks() {
+        let dir = TempDir::new().unwrap();
+        init_git_repo(&dir);
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.lint]
+run = "cargo clippy"
+git_hook = "pre-commit"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+
+        // Write a v1 hook (no version marker)
+        let hook_path = dir.path().join(".git/hooks/pre-commit");
+        fs::create_dir_all(hook_path.parent().unwrap()).unwrap();
+        fs::write(
+            &hook_path,
+            "#!/bin/sh\n# plz:managed - do not edit\nplz hooks run pre-commit \"$@\"\n",
+        )
+        .unwrap();
+
+        // Install should overwrite it since it's managed and outdated
+        hooks::install(&cfg, dir.path()).unwrap();
+        let content = fs::read_to_string(&hook_path).unwrap();
+        assert!(
+            content.contains("plz:hooks_version="),
+            "should have been upgraded"
+        );
+        assert!(!content.contains("\"$@\""), "should not have $@");
     }
 
     #[test]
