@@ -82,7 +82,6 @@ fn is_nested() -> bool {
 
 fn is_interactive(cli: &Cli) -> bool {
     if cli.no_interactive {
-        eprintln!("Skipping interactive prompts");
         return false;
     }
     if is_nested() {

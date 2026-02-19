@@ -127,9 +127,13 @@ pub fn run_stage(
         None => return Ok(()),
     };
 
+    let names = task_names.join(", ");
+    eprintln!("\x1b[36m🙏 Running {stage} hook ({names})\x1b[0m");
+
     for name in task_names {
         crate::runner::run_task_with_args(config, name, base_dir, interactive, extra_args)?;
     }
+    eprintln!("\x1b[32m✓ {stage} hook passed\x1b[0m");
     Ok(())
 }
 
