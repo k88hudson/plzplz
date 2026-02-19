@@ -1188,16 +1188,14 @@ run = "echo hello"
         )
         .unwrap();
 
-        // Without a TTY, plz should detect non-interactive mode.
-        // Clear PLZ_COMMAND (inherited from plz test) and CI env vars
-        // so the no-TTY detection path is exercised.
+        // Without a TTY (or in CI), plz should detect non-interactive mode
+        // and fail rather than showing the interactive picker.
         plz()
             .current_dir(dir.path())
-            .env_remove("PLZ_COMMAND")
-            .env_remove("CI")
             .assert()
+            .failure()
             .stderr(predicate::str::contains(
-                "Skipping interactive prompts: stdin is not a terminal",
+                "No task specified (running in non-interactive mode)",
             ));
     }
 
