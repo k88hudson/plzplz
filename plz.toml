@@ -17,6 +17,7 @@ run = "cargo build --release && plz genschema"
 # Run tests
 [tasks.test]
 run = "plz genschema && cargo test"
+git_hook = "pre-push"
 
 # Run linting
 [tasks.lint]
@@ -30,6 +31,7 @@ fail_hook = { suggest_command = "cargo fmt" }
 # Check linting and formating
 [tasks.check]
 run_parallel = ["plz format", "plz lint"]
+git_hook = "pre-commit"
 
 # Install locally
 [tasks.install]

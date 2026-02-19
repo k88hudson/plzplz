@@ -35,7 +35,13 @@ pub fn tasks_by_stage(config: &PlzConfig) -> BTreeMap<String, Vec<String>> {
 }
 
 fn generate_hook_script(stage: &str) -> String {
-    format!("#!/bin/sh\n{MANAGED_MARKER}\nplz hook run {stage}\n")
+    format!(
+        "#!/bin/sh\n\
+         {MANAGED_MARKER}\n\
+         [ \"${{PLZ_SKIP_HOOKS}}\" = \"1\" ] && exit 0\n\
+         command -v plz >/dev/null 2>&1 || {{ echo \"plz not found in PATH, skipping {stage} hook\" >&2; exit 0; }}\n\
+         plz --no-interactive hooks run {stage} \"$@\"\n"
+    )
 }
 
 fn is_plz_managed(path: &Path) -> bool {
@@ -106,22 +112,22 @@ pub fn uninstall(config: &PlzConfig, base_dir: &Path) -> Result<()> {
 }
 
 /// Run all tasks for a given git hook stage (called by the hook script itself).
+/// `extra_args` are forwarded to each task (e.g. commit message file path for commit-msg hooks).
 pub fn run_stage(
     config: &PlzConfig,
     stage: &str,
     base_dir: &Path,
     interactive: bool,
+    extra_args: &[String],
 ) -> Result<()> {
     let stages = tasks_by_stage(config);
     let task_names = match stages.get(stage) {
         Some(names) => names,
-        None => {
-            bail!("No tasks configured for git hook stage \"{stage}\"");
-        }
+        None => return Ok(()),
     };
 
     for name in task_names {
-        crate::runner::run_task(config, name, base_dir, interactive)?;
+        crate::runner::run_task_with_args(config, name, base_dir, interactive, extra_args)?;
     }
     Ok(())
 }
@@ -165,7 +171,15 @@ mod tests {
         let script = generate_hook_script("pre-commit");
         assert!(script.starts_with("#!/bin/sh\n"));
         assert!(script.contains(MANAGED_MARKER));
-        assert!(script.contains("plz hook run pre-commit"));
+        assert!(script.contains("plz --no-interactive hooks run pre-commit \"$@\""));
+        assert!(script.contains("PLZ_SKIP_HOOKS"));
+        assert!(script.contains("command -v plz"));
+    }
+
+    #[test]
+    fn test_generate_hook_script_commit_msg() {
+        let script = generate_hook_script("commit-msg");
+        assert!(script.contains("plz --no-interactive hooks run commit-msg \"$@\""));
     }
 
     #[test]
@@ -174,7 +188,7 @@ mod tests {
         let path = dir.path().join("pre-commit");
         fs::write(
             &path,
-            format!("#!/bin/sh\n{MANAGED_MARKER}\nplz hook run pre-commit\n"),
+            format!("#!/bin/sh\n{MANAGED_MARKER}\nplz hooks run pre-commit\n"),
         )
         .unwrap();
         assert!(is_plz_managed(&path));

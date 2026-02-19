@@ -47,7 +47,7 @@ enum Command {
     /// Browse and copy example task snippets
     Example,
     /// Install or manage git hooks
-    Hook {
+    Hooks {
         #[command(subcommand)]
         hook_command: Option<HookCommand>,
     },
@@ -63,6 +63,9 @@ enum HookCommand {
     Run {
         /// The git hook stage to run (e.g. pre-commit)
         stage: String,
+        /// Extra arguments forwarded to tasks (e.g. commit message file for commit-msg)
+        #[arg(trailing_var_arg = true)]
+        args: Vec<String>,
     },
 }
 
@@ -132,7 +135,7 @@ fn main() -> Result<()> {
             }
             None => return init::setup(),
         },
-        Some(Command::Hook { ref hook_command }) => {
+        Some(Command::Hooks { ref hook_command }) => {
             let config_path = find_config().ok_or_else(|| anyhow::anyhow!("No plz.toml found"))?;
             let config = config::load(&config_path)?;
             let base_dir = config_path.parent().unwrap().to_path_buf();
@@ -140,8 +143,8 @@ fn main() -> Result<()> {
             match hook_command {
                 Some(HookCommand::Install) => return hooks::install(&config, &base_dir),
                 Some(HookCommand::Uninstall) => return hooks::uninstall(&config, &base_dir),
-                Some(HookCommand::Run { stage }) => {
-                    return hooks::run_stage(&config, stage, &base_dir, interactive);
+                Some(HookCommand::Run { stage, args }) => {
+                    return hooks::run_stage(&config, stage, &base_dir, interactive, args);
                 }
                 None => {
                     hooks::status(&config, &base_dir)?;

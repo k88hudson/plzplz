@@ -1,4 +1,5 @@
 use crate::config;
+use crate::hooks;
 pub use crate::templates::DEFAULTS;
 use anyhow::{Result, bail};
 use std::env;
@@ -457,33 +458,90 @@ pub fn setup() -> Result<()> {
             cliclack::log::info(format!("  {}", entry.file_name().to_string_lossy()))?;
         }
         cliclack::outro("Edit the files above to customize the tasks offered by `plz init`.")?;
+    } else {
+        let should_create: bool = cliclack::confirm(format!(
+            "Create defaults directory at {}?",
+            defaults_dir.display()
+        ))
+        .interact()?;
+
+        if !should_create {
+            cliclack::outro("Skipped.")?;
+        } else {
+            std::fs::create_dir_all(&defaults_dir)?;
+
+            for (name, _, content) in DEFAULTS {
+                let path = defaults_dir.join(format!("{name}.plz.toml"));
+                let scaffold = generate_scaffold(content);
+                std::fs::write(&path, scaffold)?;
+                cliclack::log::success(format!("Created {name}.plz.toml"))?;
+            }
+
+            cliclack::outro(format!(
+                "Edit files in {} to customize the tasks offered by `plz init`.",
+                defaults_dir.display()
+            ))?;
+        }
+    }
+
+    prompt_install_hooks()?;
+
+    Ok(())
+}
+
+fn prompt_install_hooks() -> Result<()> {
+    let cwd = env::current_dir()?;
+    let config_path = ["plz.toml", ".plz.toml"]
+        .iter()
+        .map(|n| cwd.join(n))
+        .find(|p| p.exists());
+
+    let Some(config_path) = config_path else {
+        return Ok(());
+    };
+
+    let cfg = config::load(&config_path)?;
+    let base_dir = config_path.parent().unwrap();
+    let stages = hooks::tasks_by_stage(&cfg);
+    if stages.is_empty() {
         return Ok(());
     }
 
-    let should_create: bool = cliclack::confirm(format!(
-        "Create defaults directory at {}?",
-        defaults_dir.display()
+    let hooks_dir = match hooks::find_git_hooks_dir(base_dir) {
+        Ok(dir) => dir,
+        Err(_) => return Ok(()),
+    };
+
+    let uninstalled: Vec<_> = stages
+        .iter()
+        .filter(|(stage, _)| {
+            let p = hooks_dir.join(stage);
+            !p.exists()
+                || !std::fs::read_to_string(&p)
+                    .map(|c| c.contains("plz:managed"))
+                    .unwrap_or(false)
+        })
+        .collect();
+
+    if uninstalled.is_empty() {
+        return Ok(());
+    }
+
+    eprintln!();
+    let hook_list: Vec<String> = uninstalled
+        .iter()
+        .map(|(stage, tasks)| format!("{stage} ({})", tasks.join(", ")))
+        .collect();
+    let install: bool = cliclack::confirm(format!(
+        "Git hooks not installed: {}. Install them?",
+        hook_list.join(", ")
     ))
+    .initial_value(true)
     .interact()?;
 
-    if !should_create {
-        cliclack::outro("Skipped.")?;
-        return Ok(());
+    if install {
+        hooks::install(&cfg, base_dir)?;
     }
-
-    std::fs::create_dir_all(&defaults_dir)?;
-
-    for (name, _, content) in DEFAULTS {
-        let path = defaults_dir.join(format!("{name}.plz.toml"));
-        let scaffold = generate_scaffold(content);
-        std::fs::write(&path, scaffold)?;
-        cliclack::log::success(format!("Created {name}.plz.toml"))?;
-    }
-
-    cliclack::outro(format!(
-        "Edit files in {} to customize the tasks offered by `plz init`.",
-        defaults_dir.display()
-    ))?;
 
     Ok(())
 }

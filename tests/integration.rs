@@ -863,10 +863,10 @@ git_hook = "pre-push"
 
         let content = fs::read_to_string(&pre_commit).unwrap();
         assert!(content.contains("plz:managed"));
-        assert!(content.contains("plz hook run pre-commit"));
+        assert!(content.contains("hooks run pre-commit"));
 
         let content = fs::read_to_string(&pre_push).unwrap();
-        assert!(content.contains("plz hook run pre-push"));
+        assert!(content.contains("hooks run pre-push"));
     }
 
     #[test]
@@ -904,7 +904,7 @@ git_hook = "pre-commit"
         let hook_path = dir.path().join(".git/hooks/pre-commit");
         fs::write(
             &hook_path,
-            "#!/bin/sh\n# plz:managed - do not edit\nplz hook run pre-commit\n",
+            "#!/bin/sh\n# plz:managed - do not edit\nplz hooks run pre-commit\n",
         )
         .unwrap();
 
@@ -931,7 +931,7 @@ git_hook = "pre-commit"
         let hook_path = dir.path().join(".git/hooks/pre-commit");
         fs::write(
             &hook_path,
-            "#!/bin/sh\n# plz:managed - do not edit\nplz hook run pre-commit\n",
+            "#!/bin/sh\n# plz:managed - do not edit\nplz hooks run pre-commit\n",
         )
         .unwrap();
 
@@ -1004,12 +1004,64 @@ git_hook = "pre-commit"
             ),
         );
         let cfg = config::load(&path).unwrap();
-        hooks::run_stage(&cfg, "pre-commit", dir.path(), false).unwrap();
+        hooks::run_stage(&cfg, "pre-commit", dir.path(), false, &[]).unwrap();
         assert!(marker.exists());
     }
 
     #[test]
-    fn run_stage_unknown_stage_errors() {
+    fn run_stage_forwards_args_to_tasks() {
+        let dir = TempDir::new().unwrap();
+        let out = dir.path().join("args_out.txt");
+        let path = write_config(
+            &dir,
+            &format!(
+                r#"
+[tasks.check-msg]
+run = "echo $1 > {}"
+git_hook = "commit-msg"
+"#,
+                out.display()
+            ),
+        );
+        let cfg = config::load(&path).unwrap();
+        hooks::run_stage(
+            &cfg,
+            "commit-msg",
+            dir.path(),
+            false,
+            &["/tmp/COMMIT_EDITMSG".to_string()],
+        )
+        .unwrap();
+        let content = fs::read_to_string(&out).unwrap();
+        assert!(content.contains("/tmp/COMMIT_EDITMSG"), "got: {content}");
+    }
+
+    #[test]
+    fn hook_script_contains_skip_and_fallback() {
+        let dir = TempDir::new().unwrap();
+        init_git_repo(&dir);
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.lint]
+run = "cargo clippy"
+git_hook = "pre-commit"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        hooks::install(&cfg, dir.path()).unwrap();
+
+        let content = fs::read_to_string(dir.path().join(".git/hooks/pre-commit")).unwrap();
+        assert!(content.contains("PLZ_SKIP_HOOKS"), "missing skip env var");
+        assert!(
+            content.contains("command -v plz"),
+            "missing not-in-PATH fallback"
+        );
+        assert!(content.contains("\"$@\""), "missing arg passthrough");
+    }
+
+    #[test]
+    fn run_stage_unconfigured_stage_succeeds() {
         let dir = TempDir::new().unwrap();
         let path = write_config(
             &dir,
@@ -1020,8 +1072,8 @@ git_hook = "pre-commit"
 "#,
         );
         let cfg = config::load(&path).unwrap();
-        let err = hooks::run_stage(&cfg, "pre-push", dir.path(), false);
-        assert!(err.is_err());
+        // No tasks configured for pre-push — should succeed silently
+        hooks::run_stage(&cfg, "pre-push", dir.path(), false, &[]).unwrap();
     }
 
     #[cfg(unix)]
