@@ -35,4 +35,4 @@ git_hook = "pre-commit"
 
 # Install locally
 [tasks.install]
-run = "cargo install --path . --force"
+run_serial = ["cargo install --path . --force", "plz hooks install"]
