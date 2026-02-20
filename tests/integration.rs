@@ -255,6 +255,100 @@ run = "cargo build"
     }
 
     #[test]
+    fn extends_env_applies_to_all_tasks() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[extends]
+env = "pnpm"
+
+[tasks.build]
+run = "vite build"
+
+[tasks.dev]
+run = "vite dev"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        assert_eq!(cfg.tasks["build"].tool_env.as_deref(), Some("pnpm"));
+        assert_eq!(cfg.tasks["dev"].tool_env.as_deref(), Some("pnpm"));
+    }
+
+    #[test]
+    fn extends_dir_applies_to_all_tasks() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[extends]
+dir = "packages/web"
+
+[tasks.build]
+run = "echo build"
+
+[tasks.dev]
+run = "echo dev"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        assert_eq!(cfg.tasks["build"].dir.as_deref(), Some("packages/web"));
+        assert_eq!(cfg.tasks["dev"].dir.as_deref(), Some("packages/web"));
+    }
+
+    #[test]
+    fn per_task_overrides_extends() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[extends]
+env = "pnpm"
+dir = "packages/web"
+
+[tasks.build]
+run = "vite build"
+
+[tasks.api]
+run = "node server.js"
+env = "npm"
+dir = "packages/api"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        assert_eq!(cfg.tasks["build"].tool_env.as_deref(), Some("pnpm"));
+        assert_eq!(cfg.tasks["build"].dir.as_deref(), Some("packages/web"));
+        assert_eq!(cfg.tasks["api"].tool_env.as_deref(), Some("npm"));
+        assert_eq!(cfg.tasks["api"].dir.as_deref(), Some("packages/api"));
+    }
+
+    #[test]
+    fn empty_string_opts_out_of_extends() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[extends]
+env = "pnpm"
+dir = "packages/web"
+
+[tasks.build]
+run = "vite build"
+
+[tasks.plain]
+run = "echo hi"
+env = ""
+dir = ""
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        assert_eq!(cfg.tasks["build"].tool_env.as_deref(), Some("pnpm"));
+        assert_eq!(cfg.tasks["build"].dir.as_deref(), Some("packages/web"));
+        assert_eq!(cfg.tasks["plain"].tool_env, None);
+        assert_eq!(cfg.tasks["plain"].dir, None);
+    }
+
+    #[test]
     fn parse_invalid_toml_errors() {
         let dir = TempDir::new().unwrap();
         let path = write_config(&dir, "this is not valid toml [[[");
@@ -565,6 +659,30 @@ mod init_tests {
         }
         let types = init::detect_project_types(dir.path());
         assert!(types.iter().any(|t| t.name == "npm"));
+    }
+
+    #[test]
+    fn detect_project_type_npm_from_package_json() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("package.json"), "{}").unwrap();
+        unsafe {
+            std::env::set_var("PLZ_CONFIG_DIR", dir.path().join("no_config"));
+        }
+        let types = init::detect_project_types(dir.path());
+        assert!(types.iter().any(|t| t.name == "npm"));
+    }
+
+    #[test]
+    fn detect_project_type_npm_from_package_json_excluded_when_pnpm_present() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("package.json"), "{}").unwrap();
+        fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
+        unsafe {
+            std::env::set_var("PLZ_CONFIG_DIR", dir.path().join("no_config"));
+        }
+        let types = init::detect_project_types(dir.path());
+        assert!(types.iter().any(|t| t.name == "pnpm"));
+        assert!(!types.iter().any(|t| t.name == "npm"));
     }
 
     #[test]
@@ -1302,5 +1420,16 @@ run = "echo hello"
             .assert()
             .failure()
             .stderr(predicate::str::contains("already exists"));
+    }
+
+    #[test]
+    fn cli_init_no_project_creates_hello_task() {
+        let dir = TempDir::new().unwrap();
+
+        plz().arg("init").current_dir(dir.path()).assert().success();
+
+        let content = fs::read_to_string(dir.path().join("plz.toml")).unwrap();
+        assert!(content.contains("[tasks.hello]"));
+        assert!(content.contains("echo 'hello world'"));
     }
 }

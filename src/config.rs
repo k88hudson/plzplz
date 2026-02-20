@@ -30,8 +30,22 @@ pub const VALID_GIT_HOOKS: &[&str] = &[
     "sendemail-validate",
 ];
 
+#[derive(Debug, Default, Clone, Deserialize, JsonSchema)]
+pub struct GlobalSettings {
+    /// Tool environment wrapper applied to all tasks: "pnpm", "npm", or "uv"
+    #[serde(default, rename = "env")]
+    #[schemars(rename = "env")]
+    pub tool_env: Option<String>,
+    /// Default working directory (relative to plz.toml) for all tasks
+    #[serde(default)]
+    pub dir: Option<String>,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct PlzConfig {
+    /// Global defaults that apply to all tasks (can be overridden per-task)
+    #[serde(default)]
+    pub extends: Option<GlobalSettings>,
     /// Tasks to run, keyed by name (e.g. [tasks.build]). Run with `plz <name>`.
     pub tasks: HashMap<String, Task>,
 }
@@ -185,6 +199,27 @@ pub fn load(path: &Path) -> Result<PlzConfig> {
             {
                 task.description = extract_comment(prefix);
             }
+        }
+    }
+
+    // Apply global defaults from [extends] to tasks.
+    // Empty string means "explicitly no value" (opt out of extends).
+    if let Some(ref extends) = config.extends {
+        for task in config.tasks.values_mut() {
+            if task.tool_env.is_none() {
+                task.tool_env.clone_from(&extends.tool_env);
+            }
+            if task.dir.is_none() {
+                task.dir.clone_from(&extends.dir);
+            }
+        }
+    }
+    for task in config.tasks.values_mut() {
+        if task.tool_env.as_deref() == Some("") {
+            task.tool_env = None;
+        }
+        if task.dir.as_deref() == Some("") {
+            task.dir = None;
         }
     }
 

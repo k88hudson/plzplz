@@ -117,15 +117,15 @@ pub fn add_suffix_to_toml(
 pub fn detect_project_types(cwd: &Path) -> Vec<DefaultConfig> {
     let detected: Vec<&str> = DEFAULTS
         .iter()
-        .filter(|(_, detect, _)| cwd.join(detect).exists())
+        .filter(|(_, detect_files, _)| detect_files.iter().any(|f| cwd.join(f).exists()))
         .map(|(name, _, _)| *name)
         .collect();
     let has_pnpm = detected.contains(&"pnpm");
 
     DEFAULTS
         .iter()
-        .filter(|(name, detect, _)| {
-            cwd.join(detect).exists()
+        .filter(|(name, detect_files, _)| {
+            detect_files.iter().any(|f| cwd.join(f).exists())
                 // prefer pnpm over npm
                 && !(*name == "npm" && has_pnpm)
         })
@@ -151,13 +151,15 @@ pub fn run() -> Result<()> {
     }
 
     let project_types = detect_project_types(&cwd);
-    if project_types.is_empty() {
-        bail!(
-            "No supported project types detected (looked for pnpm-lock.yaml, package-lock.json, uv.lock, Cargo.toml)"
-        );
-    }
 
     cliclack::intro("🙏 Initializing plz.toml 🙏")?;
+
+    if project_types.is_empty() {
+        let output = "[tasks.hello]\nrun = \"echo 'hello world'\"";
+        std::fs::write(&config_path, output)?;
+        cliclack::outro("Created plz.toml with a starter task")?;
+        return Ok(());
+    }
 
     let detected: Vec<&str> = project_types.iter().map(|p| p.name).collect();
     cliclack::log::info(format!("Detected: {}", detected.join(", ")))?;

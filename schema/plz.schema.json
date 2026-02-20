@@ -3,6 +3,17 @@
   "title": "PlzConfig",
   "type": "object",
   "properties": {
+    "extends": {
+      "description": "Global defaults that apply to all tasks (can be overridden per-task)",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GlobalSettings"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "tasks": {
       "description": "Tasks to run, keyed by name (e.g. [tasks.build]). Run with `plz <name>`.",
       "type": "object",
@@ -15,6 +26,27 @@
     "tasks"
   ],
   "$defs": {
+    "GlobalSettings": {
+      "type": "object",
+      "properties": {
+        "dir": {
+          "description": "Default working directory (relative to plz.toml) for all tasks",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "env": {
+          "description": "Tool environment wrapper applied to all tasks: \"pnpm\", \"npm\", or \"uv\"",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      }
+    },
     "Task": {
       "type": "object",
       "properties": {
