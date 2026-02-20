@@ -111,6 +111,21 @@ env = "pnpm"
     }
 
     #[test]
+    fn parse_task_with_npm_env() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.a]
+run = "test"
+env = "npm"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        assert_eq!(cfg.tasks["a"].tool_env.as_deref(), Some("npm"));
+    }
+
+    #[test]
     fn parse_task_with_dir() {
         let dir = TempDir::new().unwrap();
         let path = write_config(
@@ -415,6 +430,21 @@ env = "pnpm"
     }
 
     #[test]
+    fn run_with_tool_env_npm() {
+        let dir = TempDir::new().unwrap();
+        let cfg = load_config(
+            &dir,
+            r#"
+[tasks.npm_test]
+run = "echo hello"
+env = "npm"
+"#,
+        );
+        assert_eq!(cfg.tasks["npm_test"].tool_env.as_deref(), Some("npm"));
+        let _ = runner::run_task(&cfg, "npm_test", dir.path(), false);
+    }
+
+    #[test]
     fn run_task_reference() {
         let dir = TempDir::new().unwrap();
         let marker = dir.path().join("ref_marker.txt");
@@ -527,6 +557,30 @@ mod init_tests {
     }
 
     #[test]
+    fn detect_project_type_npm() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("package-lock.json"), "{}").unwrap();
+        unsafe {
+            std::env::set_var("PLZ_CONFIG_DIR", dir.path().join("no_config"));
+        }
+        let types = init::detect_project_types(dir.path());
+        assert!(types.iter().any(|t| t.name == "npm"));
+    }
+
+    #[test]
+    fn detect_project_type_npm_excluded_when_pnpm_present() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("package-lock.json"), "{}").unwrap();
+        fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
+        unsafe {
+            std::env::set_var("PLZ_CONFIG_DIR", dir.path().join("no_config"));
+        }
+        let types = init::detect_project_types(dir.path());
+        assert!(types.iter().any(|t| t.name == "pnpm"));
+        assert!(!types.iter().any(|t| t.name == "npm"));
+    }
+
+    #[test]
     fn detect_project_type_uv() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("uv.lock"), "").unwrap();
@@ -627,6 +681,20 @@ run = "cargo run"
             .unwrap()
             .2;
         let (_, tasks) = init::parse_default(pnpm_toml).unwrap();
+        let names: Vec<&str> = tasks.iter().map(|(n, _)| n.as_str()).collect();
+        assert!(names.contains(&"dev"));
+        assert!(names.contains(&"build"));
+        assert!(names.contains(&"test"));
+    }
+
+    #[test]
+    fn parse_default_npm() {
+        let npm_toml = init::DEFAULTS
+            .iter()
+            .find(|(name, _, _)| *name == "npm")
+            .unwrap()
+            .2;
+        let (_, tasks) = init::parse_default(npm_toml).unwrap();
         let names: Vec<&str> = tasks.iter().map(|(n, _)| n.as_str()).collect();
         assert!(names.contains(&"dev"));
         assert!(names.contains(&"build"));

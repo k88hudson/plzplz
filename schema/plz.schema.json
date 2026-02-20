@@ -35,7 +35,7 @@
           "default": null
         },
         "env": {
-          "description": "Tool environment wrapper: \"pnpm\" (uses `pnpm exec`) or \"uv\" (uses `uv run`)",
+          "description": "Tool environment wrapper: \"pnpm\" (uses `pnpm exec`), \"npm\" (uses `npx`), or \"uv\" (uses `uv run`)",
           "type": [
             "string",
             "null"

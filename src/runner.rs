@@ -44,6 +44,7 @@ fn run_task_impl(
         match task.tool_env.as_deref() {
             Some("uv") => format!("uv run {cmd}"),
             Some("pnpm") => format!("pnpm exec {cmd}"),
+            Some("npm") => format!("npx {cmd}"),
             _ => cmd.to_string(),
         }
     };
@@ -299,6 +300,7 @@ fn handle_fail_hook(
         match tool_env {
             Some("uv") => format!("uv run {cmd}"),
             Some("pnpm") => format!("pnpm exec {cmd}"),
+            Some("npm") => format!("npx {cmd}"),
             _ => cmd.to_string(),
         }
     };

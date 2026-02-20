@@ -115,9 +115,20 @@ pub fn add_suffix_to_toml(
 }
 
 pub fn detect_project_types(cwd: &Path) -> Vec<DefaultConfig> {
-    DEFAULTS
+    let detected: Vec<&str> = DEFAULTS
         .iter()
         .filter(|(_, detect, _)| cwd.join(detect).exists())
+        .map(|(name, _, _)| *name)
+        .collect();
+    let has_pnpm = detected.contains(&"pnpm");
+
+    DEFAULTS
+        .iter()
+        .filter(|(name, detect, _)| {
+            cwd.join(detect).exists()
+                // prefer pnpm over npm
+                && !(*name == "npm" && has_pnpm)
+        })
         .filter_map(|(name, _, embedded)| {
             let user_path = config_dir()?.join(format!("defaults/{name}.plz.toml"));
             let (doc, tasks) = if user_path.exists() {
@@ -142,7 +153,7 @@ pub fn run() -> Result<()> {
     let project_types = detect_project_types(&cwd);
     if project_types.is_empty() {
         bail!(
-            "No supported project types detected (looked for pnpm-lock.yaml, uv.lock, Cargo.toml)"
+            "No supported project types detected (looked for pnpm-lock.yaml, package-lock.json, uv.lock, Cargo.toml)"
         );
     }
 
@@ -338,6 +349,13 @@ run = "cargo build""#,
         description: "Task using pnpm exec",
         content: r#"[tasks.dev]
 env = "pnpm"
+run = "vite""#,
+    },
+    Template {
+        name: "npm task",
+        description: "Task using npx",
+        content: r#"[tasks.dev]
+env = "npm"
 run = "vite""#,
     },
     Template {
