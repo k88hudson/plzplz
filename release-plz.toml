@@ -1,0 +1,4 @@
+[workspace]
+# Disable GitHub release creation — cargo-dist handles this
+# release-plz still handles version bumps, changelogs, and git tags
+git_release_enable = false
