@@ -1315,7 +1315,31 @@ mod cli_tests {
             .current_dir(dir.path())
             .assert()
             .success()
-            .stdout(predicate::str::contains("Usage:"));
+            .stdout(predicate::str::contains("Run a task from plz.toml"));
+    }
+
+    #[test]
+    fn cli_help_lists_all_commands() {
+        let dir = TempDir::new().unwrap();
+        let output = plz()
+            .arg("--help")
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        for expected in [
+            "init",
+            "add",
+            "hooks",
+            "plz schema",
+            "plz example",
+            "--no-interactive",
+        ] {
+            assert!(
+                stdout.contains(expected),
+                "Help output missing '{expected}'"
+            );
+        }
     }
 
     #[test]

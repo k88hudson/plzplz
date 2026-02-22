@@ -60,7 +60,7 @@ pub fn pick_from_list(items: &[PickItem], footer_hint: &str) -> Result<Option<us
 
             write!(
                 out,
-                "\x1b[36m◆\x1b[0m  Start typing to match: \x1b[4m{}\x1b[0m\r\n",
+                "\x1b[36m◆\x1b[0m  Type the name of a task: \x1b[4m{}\x1b[0m\r\n",
                 query
             )?;
             lines += 1;

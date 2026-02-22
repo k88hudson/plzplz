@@ -7,17 +7,13 @@ mod templates;
 mod utils;
 
 use anyhow::{Result, bail};
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use std::env;
 use std::io::IsTerminal;
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(
-    name = "plz",
-    about = "Runs tasks defined in plz.toml\nOutput JSON schema for plz.toml with plz plz schema",
-    after_help = "\x1b[34mRun \x1b[1mplz\x1b[22m to choose a task\nRun \x1b[1mplz init\x1b[22m to create a new config\n\x1b[0m"
-)]
+#[command(name = "plz")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -45,8 +41,6 @@ enum Command {
         /// Name for the new task (prompted if omitted)
         name: Option<String>,
     },
-    /// Browse and copy example task snippets
-    Example,
     /// Install or manage git hooks
     Hooks {
         #[command(subcommand)]
@@ -74,6 +68,8 @@ enum HookCommand {
 enum PlzCommand {
     /// Print JSON Schema for plz.toml
     Schema,
+    /// Browse and copy example task snippets
+    Example,
 }
 
 fn is_nested() -> bool {
@@ -111,28 +107,110 @@ fn find_config() -> Option<PathBuf> {
     None
 }
 
-fn is_git_repo() -> bool {
-    let Ok(cwd) = env::current_dir() else {
-        return false;
-    };
-    let mut dir = cwd.as_path();
-    loop {
-        if dir.join(".git").exists() {
-            return true;
-        }
-        match dir.parent() {
-            Some(parent) => dir = parent,
-            None => return false,
-        }
+struct HelpEntry {
+    usage: &'static str,
+    description: &'static str,
+}
+
+const HELP_COMMANDS: &[HelpEntry] = &[
+    HelpEntry {
+        usage: "init",
+        description: "Create a plz.toml",
+    },
+    HelpEntry {
+        usage: "add [name]",
+        description: "Add a new task to plz.toml",
+    },
+    HelpEntry {
+        usage: "hooks",
+        description: "Install or manage git hooks",
+    },
+    HelpEntry {
+        usage: "plz",
+        description: "Manage global defaults",
+    },
+    HelpEntry {
+        usage: "plz schema",
+        description: "Print JSON Schema for plz.toml",
+    },
+    HelpEntry {
+        usage: "plz example",
+        description: "Browse and copy example task snippets",
+    },
+];
+
+const HELP_OPTIONS: &[HelpEntry] = &[
+    HelpEntry {
+        usage: "--no-interactive",
+        description: "Disable interactive prompts (auto-detected in CI)",
+    },
+    HelpEntry {
+        usage: "-h, --help",
+        description: "Print help",
+    },
+];
+
+pub fn format_help() -> String {
+    let dim = "\x1b[2m";
+    let bold = "\x1b[1m";
+    let reset = "\x1b[0m";
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "{bold}plz{reset} [task] [args...]  Run a task from plz.toml\n"
+    ));
+    out.push_str(&format!(
+        "{bold}plz{reset}                   Choose a task interactively\n"
+    ));
+    out.push('\n');
+
+    let max_usage = HELP_COMMANDS
+        .iter()
+        .map(|e| e.usage.len())
+        .max()
+        .unwrap_or(0);
+    out.push_str(&format!("{dim}Commands:{reset}\n"));
+    for entry in HELP_COMMANDS {
+        let padding = " ".repeat(max_usage - entry.usage.len() + 2);
+        out.push_str(&format!(
+            "  {dim}plz{reset} {}{padding}{}\n",
+            entry.usage, entry.description
+        ));
     }
+
+    out.push('\n');
+    let max_opt = HELP_OPTIONS
+        .iter()
+        .map(|e| e.usage.len())
+        .max()
+        .unwrap_or(0);
+    out.push_str(&format!("{dim}Options:{reset}\n"));
+    for entry in HELP_OPTIONS {
+        let padding = " ".repeat(max_opt - entry.usage.len() + 2);
+        out.push_str(&format!(
+            "  {}{padding}{}\n",
+            entry.usage, entry.description
+        ));
+    }
+
+    out
 }
 
 fn main() -> Result<()> {
+    // Intercept --help/-h at top level before clap parses
+    // (clap's help is disabled so subcommands keep their own help)
+    {
+        let args: Vec<String> = env::args().collect();
+        if args.len() == 2 && (args[1] == "--help" || args[1] == "-h") {
+            print!("{}", format_help());
+            return Ok(());
+        }
+    }
+
     let cli = Cli::parse();
 
     match cli.command {
         Some(Command::Init) => return init::run(),
-        Some(Command::Example) => return init::help_templates(),
         Some(Command::Add { name }) => return init::add_task(name),
         Some(Command::Plz { ref plz_command }) => match plz_command {
             Some(PlzCommand::Schema) => {
@@ -140,6 +218,7 @@ fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&schema)?);
                 return Ok(());
             }
+            Some(PlzCommand::Example) => return init::help_templates(),
             None => return init::setup(),
         },
         Some(Command::Hooks { ref hook_command }) => {
@@ -166,15 +245,10 @@ fn main() -> Result<()> {
     let config_path = match find_config() {
         Some(path) => path,
         None => {
-            if interactive && is_git_repo() {
-                let create: bool = cliclack::confirm("No plz.toml found. Create one?")
-                    .initial_value(true)
-                    .interact()?;
-                if create {
-                    return init::run();
-                }
+            if interactive {
+                return init::run();
             }
-            Cli::command().print_help()?;
+            print!("{}", format_help());
             return Ok(());
         }
     };
