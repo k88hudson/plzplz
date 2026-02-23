@@ -30,10 +30,9 @@ fn run_task_impl(
     run_hooks: bool,
     extra_args: &[String],
 ) -> Result<()> {
-    let task = config
-        .tasks
-        .get(task_name)
-        .ok_or_else(|| anyhow::anyhow!("Unknown task: {task_name}"))?;
+    let task = config.tasks.get(task_name).ok_or_else(|| {
+        anyhow::anyhow!("\"{task_name}\" isn't a task. Run `plz` to see all commands.")
+    })?;
 
     let work_dir = match &task.dir {
         Some(d) => base_dir.join(d),

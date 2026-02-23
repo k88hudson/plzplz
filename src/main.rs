@@ -306,7 +306,7 @@ fn resolve_task(config: &config::PlzConfig, input: &str, interactive: bool) -> R
     }
 
     if !interactive {
-        bail!("Unknown task: {input}");
+        bail!("\"{input}\" isn't a task. Run `plz` to see all commands.");
     }
 
     let mut matches: Vec<&String> = config
@@ -317,7 +317,26 @@ fn resolve_task(config: &config::PlzConfig, input: &str, interactive: bool) -> R
     matches.sort();
 
     match matches.len() {
-        0 => bail!("Unknown task: {input}"),
+        0 => {
+            eprintln!("\x1b[2m\"{input}\" isn't a task.\x1b[0m\n");
+            let mut names: Vec<&String> = config.tasks.keys().collect();
+            names.sort();
+            if names.is_empty() {
+                bail!("No tasks defined in plz.toml");
+            }
+            let items: Vec<utils::PickItem> = names
+                .iter()
+                .map(|name| utils::PickItem {
+                    label: name.to_string(),
+                    description: config.tasks[*name].description.clone().unwrap_or_default(),
+                    preview: None,
+                })
+                .collect();
+            match utils::pick_from_list(&items, "Enter to run · Esc to cancel")? {
+                Some(idx) => return Ok(names[idx].clone()),
+                None => bail!("Cancelled"),
+            }
+        }
         1 => {
             let confirmed: bool = cliclack::confirm(format!("Did you mean \"{}\"?", matches[0]))
                 .initial_value(true)

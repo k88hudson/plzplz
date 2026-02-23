@@ -1,0 +1,24 @@
+[[snippets]]
+name = "Basic task"
+description = "Simple single command"
+content = """
+[tasks.build]
+run = "cargo build"
+"""
+
+[[snippets]]
+name = "Run tests"
+description = "Run cargo test"
+content = """
+[tasks.test]
+run = "cargo test"
+"""
+
+[[snippets]]
+name = "Lint + format check"
+description = "Clippy and fmt in serial"
+content = """
+[tasks.lint]
+run_serial = ["cargo clippy", "cargo fmt --check"]
+fail_hook = { suggest_command = "plz fix" }
+"""

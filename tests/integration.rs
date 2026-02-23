@@ -504,7 +504,6 @@ env = "uv"
 "#,
         );
         assert_eq!(cfg.tasks["uv_test"].tool_env.as_deref(), Some("uv"));
-        // Don't assert run success/failure since it depends on uv installation
         let _ = runner::run_task(&cfg, "uv_test", dir.path(), false);
     }
 
@@ -571,7 +570,7 @@ run = "echo hello"
         );
         let err = runner::run_task(&cfg, "nonexistent", dir.path(), false);
         assert!(err.is_err());
-        assert!(err.unwrap_err().to_string().contains("Unknown task"));
+        assert!(err.unwrap_err().to_string().contains("isn't a task"));
     }
 
     #[test]
@@ -626,101 +625,122 @@ run = "touch {}"
 mod init_tests {
     use super::*;
     use plzplz::init;
+    use plzplz::templates;
 
     #[test]
-    fn detect_project_type_rust() {
+    fn detect_environment_rust() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("Cargo.toml"), "[package]").unwrap();
-        // Set PLZ_CONFIG_DIR to a nonexistent path to avoid loading user defaults
-        unsafe {
-            std::env::set_var("PLZ_CONFIG_DIR", dir.path().join("no_config"));
-        }
-        let types = init::detect_project_types(dir.path());
-        assert!(types.iter().any(|t| t.name == "rust"));
+        let envs = templates::load_environments();
+        let detected = templates::detect_environments(dir.path(), &envs);
+        assert!(detected.contains(&"rust".to_string()));
     }
 
     #[test]
-    fn detect_project_type_pnpm() {
+    fn detect_environment_pnpm() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
-        unsafe {
-            std::env::set_var("PLZ_CONFIG_DIR", dir.path().join("no_config"));
-        }
-        let types = init::detect_project_types(dir.path());
-        assert!(types.iter().any(|t| t.name == "pnpm"));
+        let envs = templates::load_environments();
+        let detected = templates::detect_environments(dir.path(), &envs);
+        assert!(detected.contains(&"pnpm".to_string()));
     }
 
     #[test]
-    fn detect_project_type_npm() {
+    fn detect_environment_npm() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("package-lock.json"), "{}").unwrap();
-        unsafe {
-            std::env::set_var("PLZ_CONFIG_DIR", dir.path().join("no_config"));
-        }
-        let types = init::detect_project_types(dir.path());
-        assert!(types.iter().any(|t| t.name == "npm"));
+        let envs = templates::load_environments();
+        let detected = templates::detect_environments(dir.path(), &envs);
+        assert!(detected.contains(&"npm".to_string()));
     }
 
     #[test]
-    fn detect_project_type_npm_from_package_json() {
+    fn detect_environment_npm_from_package_json() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("package.json"), "{}").unwrap();
-        unsafe {
-            std::env::set_var("PLZ_CONFIG_DIR", dir.path().join("no_config"));
-        }
-        let types = init::detect_project_types(dir.path());
-        assert!(types.iter().any(|t| t.name == "npm"));
+        let envs = templates::load_environments();
+        let detected = templates::detect_environments(dir.path(), &envs);
+        assert!(detected.contains(&"npm".to_string()));
     }
 
     #[test]
-    fn detect_project_type_npm_from_package_json_excluded_when_pnpm_present() {
-        let dir = TempDir::new().unwrap();
-        fs::write(dir.path().join("package.json"), "{}").unwrap();
-        fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
-        unsafe {
-            std::env::set_var("PLZ_CONFIG_DIR", dir.path().join("no_config"));
-        }
-        let types = init::detect_project_types(dir.path());
-        assert!(types.iter().any(|t| t.name == "pnpm"));
-        assert!(!types.iter().any(|t| t.name == "npm"));
-    }
-
-    #[test]
-    fn detect_project_type_npm_excluded_when_pnpm_present() {
-        let dir = TempDir::new().unwrap();
-        fs::write(dir.path().join("package-lock.json"), "{}").unwrap();
-        fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
-        unsafe {
-            std::env::set_var("PLZ_CONFIG_DIR", dir.path().join("no_config"));
-        }
-        let types = init::detect_project_types(dir.path());
-        assert!(types.iter().any(|t| t.name == "pnpm"));
-        assert!(!types.iter().any(|t| t.name == "npm"));
-    }
-
-    #[test]
-    fn detect_project_type_uv() {
+    fn detect_environment_uv() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("uv.lock"), "").unwrap();
-        unsafe {
-            std::env::set_var("PLZ_CONFIG_DIR", dir.path().join("no_config"));
-        }
-        let types = init::detect_project_types(dir.path());
-        assert!(types.iter().any(|t| t.name == "uv"));
+        let envs = templates::load_environments();
+        let detected = templates::detect_environments(dir.path(), &envs);
+        assert!(detected.contains(&"uv".to_string()));
     }
 
     #[test]
-    fn detect_project_type_multiple() {
+    fn detect_environment_multiple() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("Cargo.toml"), "[package]").unwrap();
         fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
-        unsafe {
-            std::env::set_var("PLZ_CONFIG_DIR", dir.path().join("no_config"));
-        }
-        let types = init::detect_project_types(dir.path());
-        assert!(types.len() >= 2);
-        assert!(types.iter().any(|t| t.name == "rust"));
-        assert!(types.iter().any(|t| t.name == "pnpm"));
+        let envs = templates::load_environments();
+        let detected = templates::detect_environments(dir.path(), &envs);
+        assert!(detected.len() >= 2);
+        assert!(detected.contains(&"rust".to_string()));
+        assert!(detected.contains(&"pnpm".to_string()));
+    }
+
+    #[test]
+    fn detect_environment_none() {
+        let dir = TempDir::new().unwrap();
+        let envs = templates::load_environments();
+        let detected = templates::detect_environments(dir.path(), &envs);
+        assert!(detected.is_empty());
+    }
+
+    #[test]
+    fn pnpm_is_alternative_to_npm() {
+        let envs = templates::load_environments();
+        let pnpm = &envs["pnpm"];
+        assert!(pnpm.alternative_to.contains(&"npm".to_string()));
+    }
+
+    #[test]
+    fn load_embedded_templates() {
+        let all = templates::load_templates(None);
+        let names: Vec<&str> = all.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"rust"));
+        assert!(names.contains(&"pnpm"));
+        assert!(names.contains(&"npm"));
+        assert!(names.contains(&"uv"));
+    }
+
+    #[test]
+    fn template_has_metadata() {
+        let all = templates::load_templates(None);
+        let rust = all.iter().find(|t| t.name == "rust").unwrap();
+        assert_eq!(rust.env, "rust");
+        assert!(!rust.description.is_empty());
+    }
+
+    #[test]
+    fn strip_template_section() {
+        let input = r#"[template]
+description = "Test"
+env = "rust"
+
+# Build
+[tasks.build]
+run = "cargo build"
+"#;
+        let result = templates::strip_template_section(input);
+        assert!(!result.contains("[template]"));
+        assert!(!result.contains("description = \"Test\""));
+        assert!(result.contains("[tasks.build]"));
+        assert!(result.contains("cargo build"));
+    }
+
+    #[test]
+    fn load_embedded_snippets() {
+        let all = templates::load_snippets();
+        let env_names: Vec<&str> = all.iter().map(|(n, _)| n.as_str()).collect();
+        assert!(env_names.contains(&"general"));
+        assert!(env_names.contains(&"rust"));
+        assert!(env_names.contains(&"pnpm"));
     }
 
     #[test]
@@ -756,194 +776,15 @@ run_serial = ["cargo fmt", "cargo clippy --fix --allow-dirty"]
     }
 
     #[test]
-    fn add_suffix_not_applied_for_single_type() {
-        let toml = r#"
-[tasks.dev]
-run = "cargo run"
-"#;
-        let (_, tasks) = init::parse_default(toml).unwrap();
-        // When there's only one type, callers should not call add_suffix_to_toml.
-        // Verify the original names are intact.
-        assert!(tasks.iter().any(|(n, _)| n == "dev"));
-    }
-
-    #[test]
-    fn detect_project_type_none() {
-        let dir = TempDir::new().unwrap();
-        unsafe {
-            std::env::set_var("PLZ_CONFIG_DIR", dir.path().join("no_config"));
+    fn embedded_templates_parse_correctly() {
+        let all = templates::load_templates(None);
+        for t in &all {
+            let stripped = templates::strip_template_section(&t.content);
+            let parsed = init::parse_default(&stripped);
+            assert!(parsed.is_some(), "Template {} failed to parse", t.name);
+            let (_, tasks) = parsed.unwrap();
+            assert!(!tasks.is_empty(), "Template {} has no tasks", t.name);
         }
-        let types = init::detect_project_types(dir.path());
-        assert!(types.is_empty());
-    }
-
-    #[test]
-    fn parse_default_rust() {
-        let rust_toml = init::DEFAULTS
-            .iter()
-            .find(|(name, _, _)| *name == "rust")
-            .unwrap()
-            .2;
-        let (_, tasks) = init::parse_default(rust_toml).unwrap();
-        let names: Vec<&str> = tasks.iter().map(|(n, _)| n.as_str()).collect();
-        assert!(names.contains(&"build"));
-        assert!(names.contains(&"test"));
-        assert!(names.contains(&"lint"));
-    }
-
-    #[test]
-    fn parse_default_pnpm() {
-        let pnpm_toml = init::DEFAULTS
-            .iter()
-            .find(|(name, _, _)| *name == "pnpm")
-            .unwrap()
-            .2;
-        let (_, tasks) = init::parse_default(pnpm_toml).unwrap();
-        let names: Vec<&str> = tasks.iter().map(|(n, _)| n.as_str()).collect();
-        assert!(names.contains(&"dev"));
-        assert!(names.contains(&"build"));
-        assert!(names.contains(&"test"));
-    }
-
-    #[test]
-    fn parse_default_npm() {
-        let npm_toml = init::DEFAULTS
-            .iter()
-            .find(|(name, _, _)| *name == "npm")
-            .unwrap()
-            .2;
-        let (_, tasks) = init::parse_default(npm_toml).unwrap();
-        let names: Vec<&str> = tasks.iter().map(|(n, _)| n.as_str()).collect();
-        assert!(names.contains(&"dev"));
-        assert!(names.contains(&"build"));
-        assert!(names.contains(&"test"));
-    }
-
-    #[test]
-    fn parse_default_uv() {
-        let uv_toml = init::DEFAULTS
-            .iter()
-            .find(|(name, _, _)| *name == "uv")
-            .unwrap()
-            .2;
-        let (_, tasks) = init::parse_default(uv_toml).unwrap();
-        let names: Vec<&str> = tasks.iter().map(|(n, _)| n.as_str()).collect();
-        assert!(names.contains(&"test"));
-        assert!(names.contains(&"build"));
-        assert!(names.contains(&"lint"));
-    }
-
-    #[test]
-    fn merge_defaults_override_task() {
-        let embedded = r#"
-[tasks.build]
-run = "cargo build"
-
-[tasks.test]
-run = "cargo test"
-"#;
-        let user = r#"
-[tasks.build]
-run = "cargo build --release"
-"#;
-        let (doc, _) = init::merge_defaults(embedded, user).unwrap();
-        let tasks = doc.get("tasks").unwrap().as_table().unwrap();
-        let build = tasks.get("build").unwrap().as_table().unwrap();
-        assert_eq!(
-            build.get("run").unwrap().as_str().unwrap(),
-            "cargo build --release"
-        );
-    }
-
-    #[test]
-    fn merge_defaults_blank_removes_task() {
-        let embedded = r#"
-[tasks.build]
-run = "cargo build"
-
-[tasks.test]
-run = "cargo test"
-"#;
-        let user = r#"
-[tasks.test]
-"#;
-        let (doc, tasks) = init::merge_defaults(embedded, user).unwrap();
-        let table = doc.get("tasks").unwrap().as_table().unwrap();
-        assert!(table.get("build").is_some());
-        assert!(table.get("test").is_none());
-        assert!(!tasks.iter().any(|(n, _)| n == "test"));
-    }
-
-    #[test]
-    fn merge_defaults_preserves_unmodified() {
-        let embedded = r#"
-[tasks.build]
-run = "cargo build"
-
-[tasks.test]
-run = "cargo test"
-
-[tasks.lint]
-run = "cargo clippy"
-"#;
-        let user = r#"
-[tasks.build]
-run = "cargo build --release"
-"#;
-        let (doc, _) = init::merge_defaults(embedded, user).unwrap();
-        let table = doc.get("tasks").unwrap().as_table().unwrap();
-        assert!(table.get("test").is_some());
-        assert!(table.get("lint").is_some());
-        let test = table.get("test").unwrap().as_table().unwrap();
-        assert_eq!(test.get("run").unwrap().as_str().unwrap(), "cargo test");
-    }
-
-    #[test]
-    fn detect_project_type_rust_with_commented_out_defaults() {
-        let dir = TempDir::new().unwrap();
-        fs::write(dir.path().join("Cargo.toml"), "[package]").unwrap();
-        // Create a user defaults file with all entries commented out (scaffolded state)
-        let defaults_dir = dir.path().join("config/defaults");
-        fs::create_dir_all(&defaults_dir).unwrap();
-        fs::write(
-            defaults_dir.join("rust.plz.toml"),
-            r#"# These defaults extend the built-ins.
-# Uncomment to override. Leave blank to omit from the list.
-
-# [tasks.build]
-# run = "cargo build"
-
-# [tasks.test]
-# run = "cargo test"
-"#,
-        )
-        .unwrap();
-        unsafe {
-            std::env::set_var("PLZ_CONFIG_DIR", dir.path().join("config"));
-        }
-        let types = init::detect_project_types(dir.path());
-        assert!(
-            types.iter().any(|t| t.name == "rust"),
-            "Should detect Cargo.toml even when user defaults are all commented out"
-        );
-    }
-
-    #[test]
-    fn generate_scaffold_comments_out_content() {
-        let input = r#"[tasks.build]
-run = "cargo build"
-
-# Run tests
-[tasks.test]
-run = "cargo test"
-"#;
-        let result = init::generate_scaffold(input);
-        // Non-comment lines should be prefixed with "# "
-        assert!(result.contains("# [tasks.build]"));
-        assert!(result.contains("# run = \"cargo build\""));
-        // Already-comment lines should NOT get double-prefixed
-        assert!(result.contains("# Run tests"));
-        assert!(!result.contains("# # Run tests"));
     }
 }
 
@@ -1239,7 +1080,6 @@ git_hook = "pre-commit"
         );
         let cfg = config::load(&path).unwrap();
 
-        // Write a v1 hook (no version marker)
         let hook_path = dir.path().join(".git/hooks/pre-commit");
         fs::create_dir_all(hook_path.parent().unwrap()).unwrap();
         fs::write(
@@ -1248,7 +1088,6 @@ git_hook = "pre-commit"
         )
         .unwrap();
 
-        // Install should overwrite it since it's managed and outdated
         hooks::install(&cfg, dir.path()).unwrap();
         let content = fs::read_to_string(&hook_path).unwrap();
         assert!(
@@ -1270,7 +1109,6 @@ git_hook = "pre-commit"
 "#,
         );
         let cfg = config::load(&path).unwrap();
-        // No tasks configured for pre-push — should succeed silently
         hooks::run_stage(&cfg, "pre-push", dir.path(), false).unwrap();
     }
 
@@ -1383,7 +1221,7 @@ run = "echo hello"
             .current_dir(dir.path())
             .assert()
             .failure()
-            .stderr(predicate::str::contains("Unknown task"));
+            .stderr(predicate::str::contains("isn't a task"));
     }
 
     #[test]
@@ -1398,8 +1236,6 @@ run = "echo hello"
         )
         .unwrap();
 
-        // Without a TTY (or in CI), plz should detect non-interactive mode
-        // and fail rather than showing the interactive picker.
         plz()
             .current_dir(dir.path())
             .assert()
@@ -1442,15 +1278,21 @@ run = "echo hello"
             .arg("init")
             .current_dir(dir.path())
             .assert()
-            .failure()
-            .stderr(predicate::str::contains("already exists"));
+            .success()
+            .stderr(predicate::str::contains("already exists"))
+            .stderr(predicate::str::contains("plz"));
     }
 
     #[test]
     fn cli_init_no_project_creates_hello_task() {
         let dir = TempDir::new().unwrap();
 
-        plz().arg("init").current_dir(dir.path()).assert().success();
+        plz()
+            .arg("init")
+            .current_dir(dir.path())
+            .assert()
+            .success()
+            .stderr(predicate::str::contains("Created plz.toml"));
 
         let content = fs::read_to_string(dir.path().join("plz.toml")).unwrap();
         assert!(content.contains("[tasks.hello]"));

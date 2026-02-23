@@ -1,3 +1,7 @@
+[template]
+description = "Vite + Vitest + ESLint + Prettier"
+env = "pnpm"
+
 # Start development server
 [tasks.dev]
 env = "pnpm"

@@ -1,3 +1,7 @@
+[template]
+description = "Cargo build, test, clippy, fmt"
+env = "rust"
+
 # Faster way to check for errors
 [tasks.check]
 run = "cargo check"

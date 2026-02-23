@@ -1,0 +1,26 @@
+[[snippets]]
+name = "uv task"
+description = "Task using uv run"
+content = """
+[tasks.test]
+env = "uv"
+run = "pytest"
+"""
+
+[[snippets]]
+name = "uv lint"
+description = "Run ruff check"
+content = """
+[tasks.lint]
+env = "uv"
+run = "ruff check ."
+"""
+
+[[snippets]]
+name = "uv format"
+description = "Run ruff format"
+content = """
+[tasks.format]
+env = "uv"
+run = "ruff format ."
+"""

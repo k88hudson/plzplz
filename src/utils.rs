@@ -13,6 +13,7 @@ pub fn fuzzy_match(query: &str, text: &str) -> bool {
     chars.peek().is_none()
 }
 
+#[derive(Clone)]
 pub struct PickItem {
     pub label: String,
     pub description: String,

@@ -1,3 +1,7 @@
+[template]
+description = "pytest + ruff"
+env = "uv"
+
 # Run tests
 [tasks.test]
 run = "pytest"

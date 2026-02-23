@@ -1,0 +1,26 @@
+[[snippets]]
+name = "pnpm task"
+description = "Task using pnpm exec"
+content = """
+[tasks.dev]
+env = "pnpm"
+run = "vite"
+"""
+
+[[snippets]]
+name = "pnpm test"
+description = "Run tests with vitest"
+content = """
+[tasks.test]
+env = "pnpm"
+run = "vitest run"
+"""
+
+[[snippets]]
+name = "pnpm lint"
+description = "Run eslint"
+content = """
+[tasks.lint]
+env = "pnpm"
+run = "eslint src/"
+"""

@@ -1,0 +1,51 @@
+[[snippets]]
+name = "Serial tasks"
+description = "Run commands one after another"
+content = """
+[tasks.lint]
+run_serial = ["cargo clippy", "cargo fmt --check"]
+"""
+
+[[snippets]]
+name = "Parallel tasks"
+description = "Run commands at the same time"
+content = """
+[tasks.check]
+run_parallel = ["plz:lint", "plz:test"]
+"""
+
+[[snippets]]
+name = "Fail hook: suggest"
+description = "Suggest a fix command on failure"
+content = """
+[tasks.lint]
+run_serial = ["cargo clippy", "cargo fmt --check"]
+fail_hook = { suggest_command = "plz fix" }
+"""
+
+[[snippets]]
+name = "Fail hook: message"
+description = "Show a message on failure"
+content = """
+[tasks.deploy]
+run = "deploy.sh"
+fail_hook = { message = "Check the deploy logs at /var/log/deploy.log" }
+"""
+
+[[snippets]]
+name = "Fail hook: command"
+description = "Run a command on failure"
+content = """
+[tasks.test]
+run = "cargo test"
+fail_hook = "notify-send 'Tests failed'"
+"""
+
+[[snippets]]
+name = "Working directory"
+description = "Run a task in a subdirectory"
+content = """
+[tasks.frontend]
+dir = "packages/web"
+run = "pnpm dev"
+"""

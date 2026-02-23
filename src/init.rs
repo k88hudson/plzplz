@@ -1,22 +1,19 @@
 use crate::config;
 use crate::hooks;
 use crate::settings;
-pub use crate::templates::DEFAULTS;
+use crate::templates::{self, Snippet, TemplateMeta};
 use anyhow::{Result, bail};
-use std::collections::HashMap;
 use std::env;
 use std::fmt::Write as _;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::io::{IsTerminal, Write};
+use std::path::PathBuf;
 use toml_edit::DocumentMut;
 
-pub struct DefaultConfig {
-    pub name: &'static str,
-    pub doc: DocumentMut,
-    pub tasks: Vec<(String, Option<String>)>,
+fn config_dir() -> Option<PathBuf> {
+    settings::config_dir()
 }
 
-fn extract_tasks(doc: &DocumentMut) -> Vec<(String, Option<String>)> {
+pub fn extract_tasks(doc: &DocumentMut) -> Vec<(String, Option<String>)> {
     let Some(tasks_table) = doc.get("tasks").and_then(|t| t.as_table()) else {
         return Vec::new();
     };
@@ -38,57 +35,6 @@ pub fn parse_default(toml: &str) -> Option<(DocumentMut, Vec<(String, Option<Str
     doc.get("tasks").and_then(|t| t.as_table())?;
     let tasks = extract_tasks(&doc);
     Some((doc, tasks))
-}
-
-fn config_dir() -> Option<PathBuf> {
-    settings::config_dir()
-}
-
-pub fn merge_defaults(
-    embedded: &str,
-    user_toml: &str,
-) -> Option<(DocumentMut, Vec<(String, Option<String>)>)> {
-    let mut doc: DocumentMut = embedded.parse().ok()?;
-    let user_doc: DocumentMut = user_toml.parse().ok()?;
-
-    if let Some(user_tasks) = user_doc.get("tasks").and_then(|t| t.as_table()) {
-        let tasks_table = doc.get_mut("tasks")?.as_table_mut()?;
-        for (key, user_item) in user_tasks.iter() {
-            let is_blank = user_item.as_table().is_some_and(|t| t.iter().count() == 0);
-
-            if is_blank {
-                tasks_table.remove(key);
-            } else {
-                tasks_table.insert(key, user_item.clone());
-            }
-        }
-    }
-
-    let tasks = extract_tasks(&doc);
-    Some((doc, tasks))
-}
-
-pub fn generate_scaffold(content: &str) -> String {
-    let mut out = String::new();
-    out.push_str("# These defaults extend the built-ins.\n");
-    out.push_str("# Uncomment to override. Leave blank to omit from the list.\n\n");
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            if !out.ends_with("\n\n") {
-                out.push('\n');
-            }
-            continue;
-        }
-        if !trimmed.starts_with('#') {
-            out.push_str("# ");
-        }
-        out.push_str(line);
-        out.push('\n');
-    }
-
-    out
 }
 
 pub fn add_suffix_to_toml(
@@ -114,115 +60,155 @@ pub fn add_suffix_to_toml(
     result
 }
 
-pub fn detect_project_types(cwd: &Path) -> Vec<DefaultConfig> {
-    let detected: Vec<&str> = DEFAULTS
-        .iter()
-        .filter(|(_, detect_files, _)| detect_files.iter().any(|f| cwd.join(f).exists()))
-        .map(|(name, _, _)| *name)
-        .collect();
-    let has_pnpm = detected.contains(&"pnpm");
-
-    DEFAULTS
-        .iter()
-        .filter(|(name, detect_files, _)| {
-            detect_files.iter().any(|f| cwd.join(f).exists())
-                // prefer pnpm over npm
-                && !(*name == "npm" && has_pnpm)
-        })
-        .filter_map(|(name, _, embedded)| {
-            let user_path = config_dir()?.join(format!("defaults/{name}.plz.toml"));
-            let (doc, tasks) = if user_path.exists() {
-                let user_toml = std::fs::read_to_string(&user_path).ok()?;
-                merge_defaults(embedded, &user_toml)?
-            } else {
-                parse_default(embedded)?
-            };
-            Some(DefaultConfig { name, doc, tasks })
-        })
-        .collect()
-}
-
 pub fn run() -> Result<()> {
     let cwd = env::current_dir()?;
     let config_path = cwd.join("plz.toml");
 
     if config_path.exists() {
-        bail!("plz.toml already exists in this directory");
+        // If plz.toml already exists, check for git hooks to install
+        let in_git_repo = hooks::find_git_hooks_dir(&cwd).is_ok();
+        let content = std::fs::read_to_string(&config_path)?;
+        let has_git_hooks = content.contains("git_hook");
+
+        if in_git_repo && has_git_hooks {
+            cliclack::intro("plz init")?;
+            let install_hooks: bool = cliclack::confirm("Install git hooks?")
+                .initial_value(true)
+                .interact()?;
+            if install_hooks {
+                if let Ok(ref cfg) = config::load(&config_path) {
+                    hooks::install(cfg, &cwd)?;
+                    cliclack::outro("Installed git hooks")?;
+                }
+            } else {
+                cliclack::outro("Skipped git hook installation")?;
+            }
+        } else {
+            cliclack::log::info(
+                "plz.toml already exists. Run \x1b[1mplz\x1b[0m to see all commands.",
+            )?;
+        }
+        return Ok(());
     }
 
-    let project_types = detect_project_types(&cwd);
+    let cfg_dir = config_dir();
+    let interactive = std::io::stdin().is_terminal() && !is_ci::cached();
 
-    cliclack::intro("🙏 Initializing plz.toml 🙏")?;
+    // Load environments and detect which ones match
+    let environments = templates::load_environments();
+    let detected = templates::detect_environments(&cwd, &environments);
 
-    if project_types.is_empty() {
+    // Determine which envs are "alternatives" (detected but superseded)
+    let alternative_envs: Vec<String> = detected
+        .iter()
+        .flat_map(|d| environments[d].alternative_to.clone())
+        .collect();
+
+    // Load all templates
+    let all_templates = templates::load_templates(cfg_dir.as_deref());
+
+    if !interactive {
+        let output = "[tasks.hello]\nrun = \"echo 'hello world'\"";
+        std::fs::write(&config_path, output)?;
+        eprintln!("Created plz.toml with a starter task");
+        return Ok(());
+    }
+
+    cliclack::intro("plz init")?;
+
+    if !detected.is_empty() {
+        cliclack::log::info(format!("Detected: {}", detected.join(", ")))?;
+    }
+
+    // Sort templates: detected envs first, then alternatives, then others
+    let mut sorted_templates: Vec<&TemplateMeta> = Vec::new();
+    // Detected first
+    for t in &all_templates {
+        if detected.contains(&t.env) {
+            sorted_templates.push(t);
+        }
+    }
+    // Alternatives (detected but superseded)
+    for t in &all_templates {
+        if alternative_envs.contains(&t.env) && !detected.contains(&t.env) {
+            sorted_templates.push(t);
+        }
+    }
+    // Everything else
+    for t in &all_templates {
+        if !detected.contains(&t.env) && !alternative_envs.contains(&t.env) {
+            sorted_templates.push(t);
+        }
+    }
+
+    if sorted_templates.is_empty() {
         let output = "[tasks.hello]\nrun = \"echo 'hello world'\"";
         std::fs::write(&config_path, output)?;
         cliclack::outro("Created plz.toml with a starter task")?;
         return Ok(());
     }
 
-    let detected: Vec<&str> = project_types.iter().map(|p| p.name).collect();
-    cliclack::log::info(format!("Detected: {}", detected.join(", ")))?;
+    // Build multiselect items
+    let max_name_len = sorted_templates
+        .iter()
+        .map(|t| t.name.len())
+        .max()
+        .unwrap_or(0);
 
-    let mut output = String::new();
-    let needs_suffix = project_types.len() > 1;
-
-    for pt in &project_types {
-        let first_value: Vec<&str> = pt
-            .tasks
-            .first()
-            .map(|(name, _)| name.as_str())
-            .into_iter()
-            .collect();
-        let max_name_len = pt
-            .tasks
-            .iter()
-            .map(|(name, _)| name.len())
-            .max()
-            .unwrap_or(0);
-
-        let selected: Vec<&str> = cliclack::multiselect("Include default tasks?")
-            .items(
-                &pt.tasks
-                    .iter()
-                    .map(|(name, desc)| {
-                        let desc = desc.as_deref().unwrap_or("");
-                        let padding = " ".repeat(max_name_len - name.len() + 2);
-                        (name.as_str(), format!("{name}{padding}{desc}"), "")
-                    })
-                    .collect::<Vec<_>>(),
+    let items: Vec<(&str, String, &str)> = sorted_templates
+        .iter()
+        .map(|t| {
+            let padding = " ".repeat(max_name_len - t.name.len() + 2);
+            (
+                t.name.as_str(),
+                format!("{}{padding}{}", t.name, t.description),
+                "",
             )
-            .initial_values(first_value)
-            .required(false)
-            .interact()?;
+        })
+        .collect();
 
-        if selected.is_empty() {
-            continue;
-        }
+    // Pre-select templates whose env is detected AND not an alternative
+    let initial: Vec<&str> = sorted_templates
+        .iter()
+        .filter(|t| detected.contains(&t.env) && !alternative_envs.contains(&t.env))
+        .map(|t| t.name.as_str())
+        .collect();
 
-        // Build output by removing unselected tasks from a clone of the document
-        let mut doc = pt.doc.clone();
-        if let Some(tasks_table) = doc.get_mut("tasks").and_then(|v| v.as_table_mut()) {
-            let all_keys: Vec<String> = tasks_table.iter().map(|(k, _)| k.to_string()).collect();
-            for key in all_keys {
-                if !selected.contains(&key.as_str()) {
-                    tasks_table.remove(&key);
-                }
+    let selected: Vec<&str> = cliclack::multiselect("Which templates?")
+        .items(&items)
+        .initial_values(initial)
+        .required(false)
+        .interact()?;
+
+    if selected.is_empty() {
+        cliclack::outro("No templates selected, skipping plz.toml creation")?;
+        return Ok(());
+    }
+
+    // Build output from selected templates
+    let mut output = String::new();
+    let needs_suffix = selected.len() > 1;
+
+    for template_name in &selected {
+        let template = sorted_templates
+            .iter()
+            .find(|t| t.name.as_str() == *template_name)
+            .unwrap();
+
+        let content = templates::strip_template_section(&template.content);
+
+        if needs_suffix {
+            if let Some((_, tasks)) = parse_default(&content) {
+                let suffixed = add_suffix_to_toml(&content, template_name, &tasks);
+                writeln!(output, "# {}", template.name)?;
+                write!(output, "{}", suffixed.trim())?;
+            } else {
+                writeln!(output, "# {}", template.name)?;
+                write!(output, "{}", content.trim())?;
             }
-        }
-
-        let doc_str = if needs_suffix {
-            let selected_tasks: Vec<(String, Option<String>)> = selected
-                .iter()
-                .map(|name| (name.to_string(), None))
-                .collect();
-            add_suffix_to_toml(&doc.to_string(), pt.name, &selected_tasks)
         } else {
-            doc.to_string()
-        };
-
-        writeln!(output, "# {}", pt.name)?;
-        write!(output, "{}", doc_str.trim())?;
+            write!(output, "{}", content.trim())?;
+        }
         writeln!(output)?;
         writeln!(output)?;
     }
@@ -232,201 +218,103 @@ pub fn run() -> Result<()> {
         return Ok(());
     }
 
-    // Offer git hook setup if in a git repo
+    // Check if any selected template has git_hook tasks
     let in_git_repo = hooks::find_git_hooks_dir(&cwd).is_ok();
-    if in_git_repo && let Ok(mut doc) = output.parse::<DocumentMut>() {
-        let task_names: Vec<String> = doc
-            .get("tasks")
-            .and_then(|t| t.as_table())
-            .map(|t| t.iter().map(|(k, _)| k.to_string()).collect())
-            .unwrap_or_default();
+    let has_git_hooks = output.contains("git_hook");
 
-        if !task_names.is_empty() {
-            let hook_stages: Vec<&str> = cliclack::multiselect("Add git hooks?")
-                .items(&[
-                    ("pre-commit", "pre-commit", "Run before each commit"),
-                    ("pre-push", "pre-push", "Run before each push"),
-                ])
-                .required(false)
-                .interact()?;
+    if in_git_repo && has_git_hooks {
+        let install_hooks: bool = cliclack::confirm("Install git hooks?")
+            .initial_value(true)
+            .interact()?;
 
-            // Track which tasks are already assigned to a stage so we can
-            // duplicate them with a suffix when they appear in a second stage.
-            let mut first_stage: HashMap<String, String> = HashMap::new();
-            let mut changed = false;
-            for stage in &hook_stages {
-                let selected_hooks: Vec<&str> =
-                    cliclack::multiselect(format!("Which tasks for {stage}?"))
-                        .items(
-                            &task_names
-                                .iter()
-                                .map(|n| (n.as_str(), n.as_str(), ""))
-                                .collect::<Vec<_>>(),
-                        )
-                        .required(false)
-                        .interact()?;
+        std::fs::write(&config_path, output.trim_end())?;
 
-                if let Some(tasks_table) = doc.get_mut("tasks").and_then(|v| v.as_table_mut()) {
-                    for task_name in &selected_hooks {
-                        if let Some(prev_stage) = first_stage.get(*task_name) {
-                            // Task already assigned to another stage — duplicate it
-                            // with the previous stage as suffix, and keep the original
-                            // name for this stage.
-                            let suffixed = format!("{task_name}-{prev_stage}");
-                            if let Some(original) = tasks_table.get(task_name).cloned() {
-                                tasks_table.insert(&suffixed, original);
-                            }
-                            if let Some(task) = tasks_table
-                                .get_mut(task_name)
-                                .and_then(|v| v.as_table_mut())
-                            {
-                                task.insert("git_hook", toml_edit::value(stage.to_string()));
-                            }
-                            if let Some(dup) = tasks_table
-                                .get_mut(&suffixed)
-                                .and_then(|v| v.as_table_mut())
-                            {
-                                dup.insert("git_hook", toml_edit::value(prev_stage.to_string()));
-                            }
-                        } else {
-                            if let Some(task) = tasks_table
-                                .get_mut(task_name)
-                                .and_then(|v| v.as_table_mut())
-                            {
-                                task.insert("git_hook", toml_edit::value(stage.to_string()));
-                            }
-                            first_stage.insert(task_name.to_string(), stage.to_string());
-                        }
-                        changed = true;
-                    }
-                }
-            }
-
-            if changed {
-                output = doc.to_string();
-            }
+        if install_hooks && let Ok(ref cfg) = config::load(&config_path) {
+            hooks::install(cfg, &cwd)?;
         }
-    }
-
-    std::fs::write(&config_path, output.trim_end())?;
-
-    let defaults_dir = config_dir().map(|d| d.join("defaults"));
-    if defaults_dir.as_ref().is_some_and(|d| d.exists()) {
-        cliclack::log::info(format!(
-            "💡 Edit defaults in: {}",
-            defaults_dir.unwrap().display()
-        ))?;
     } else {
-        cliclack::log::info("💡 Customize defaults with `plz plz`")?;
+        std::fs::write(&config_path, output.trim_end())?;
     }
 
     cliclack::outro("Created plz.toml".to_string())?;
 
-    // Install hooks if any were configured
-    if in_git_repo
-        && let Ok(ref cfg) = config::load(&config_path)
-        && !hooks::tasks_by_stage(cfg).is_empty()
-    {
-        hooks::install(cfg, &cwd)?;
-    }
-
     Ok(())
 }
 
-struct Template {
-    name: &'static str,
-    description: &'static str,
-    content: &'static str,
-}
-
-const TEMPLATES: &[Template] = &[
-    Template {
-        name: "Basic task",
-        description: "Simple single command",
-        content: r#"[tasks.build]
-run = "cargo build""#,
-    },
-    Template {
-        name: "pnpm task",
-        description: "Task using pnpm exec",
-        content: r#"[tasks.dev]
-env = "pnpm"
-run = "vite""#,
-    },
-    Template {
-        name: "npm task",
-        description: "Task using npx",
-        content: r#"[tasks.dev]
-env = "npm"
-run = "vite""#,
-    },
-    Template {
-        name: "uv task",
-        description: "Task using uv run",
-        content: r#"[tasks.test]
-env = "uv"
-run = "pytest""#,
-    },
-    Template {
-        name: "Serial tasks",
-        description: "Run commands one after another",
-        content: r#"[tasks.lint]
-run_serial = ["cargo clippy", "cargo fmt --check"]"#,
-    },
-    Template {
-        name: "Parallel tasks",
-        description: "Run commands at the same time",
-        content: r#"[tasks.check]
-run_parallel = ["plz:lint", "plz:test"]"#,
-    },
-    Template {
-        name: "Fail hook: suggest",
-        description: "Suggest a fix command on failure",
-        content: r#"[tasks.lint]
-run_serial = ["cargo clippy", "cargo fmt --check"]
-fail_hook = { suggest_command = "plz fix" }"#,
-    },
-    Template {
-        name: "Fail hook: message",
-        description: "Show a message on failure",
-        content: r#"[tasks.deploy]
-run = "deploy.sh"
-fail_hook = { message = "Check the deploy logs at /var/log/deploy.log" }"#,
-    },
-    Template {
-        name: "Fail hook: command",
-        description: "Run a command on failure",
-        content: r#"[tasks.test]
-run = "cargo test"
-fail_hook = "notify-send 'Tests failed'"#,
-    },
-    Template {
-        name: "Working directory",
-        description: "Run a task in a subdirectory",
-        content: r#"[tasks.frontend]
-dir = "packages/web"
-run = "pnpm dev""#,
-    },
-];
-
-fn pick_template(footer_hint: &str) -> Result<Option<usize>> {
+fn pick_snippet(
+    all_snippets: &[(String, Vec<Snippet>)],
+    detected_envs: &[String],
+    footer_hint: &str,
+) -> Result<Option<Snippet>> {
     use crate::utils::{PickItem, pick_from_list};
-    let items: Vec<PickItem> = TEMPLATES
-        .iter()
-        .map(|t| PickItem {
-            label: t.name.to_string(),
-            description: t.description.to_string(),
-            preview: Some(t.content.to_string()),
-        })
-        .collect();
-    pick_from_list(&items, footer_hint)
+
+    // Build flat list: detected env snippets first, then general, then others
+    let mut items: Vec<(PickItem, Snippet)> = Vec::new();
+
+    // Detected env snippets first
+    for (env_name, snippets) in all_snippets {
+        if detected_envs.contains(env_name) {
+            for s in snippets {
+                items.push((
+                    PickItem {
+                        label: s.name.clone(),
+                        description: s.description.clone(),
+                        preview: Some(s.content.trim().to_string()),
+                    },
+                    s.clone(),
+                ));
+            }
+        }
+    }
+
+    // General snippets
+    for (env_name, snippets) in all_snippets {
+        if env_name == "general" && !detected_envs.contains(env_name) {
+            for s in snippets {
+                items.push((
+                    PickItem {
+                        label: s.name.clone(),
+                        description: s.description.clone(),
+                        preview: Some(s.content.trim().to_string()),
+                    },
+                    s.clone(),
+                ));
+            }
+        }
+    }
+
+    // Other env snippets
+    for (env_name, snippets) in all_snippets {
+        if !detected_envs.contains(env_name) && env_name != "general" {
+            for s in snippets {
+                items.push((
+                    PickItem {
+                        label: format!("{} ({})", s.name, env_name),
+                        description: s.description.clone(),
+                        preview: Some(s.content.trim().to_string()),
+                    },
+                    s.clone(),
+                ));
+            }
+        }
+    }
+
+    let pick_items: Vec<PickItem> = items.iter().map(|(pi, _)| pi.clone()).collect();
+    match pick_from_list(&pick_items, footer_hint)? {
+        Some(idx) => Ok(Some(items[idx].1.clone())),
+        None => Ok(None),
+    }
 }
 
 pub fn help_templates() -> Result<()> {
-    match pick_template("Enter to copy · Esc to cancel")? {
-        Some(idx) => {
-            let template = &TEMPLATES[idx];
-            if copy_to_clipboard(template.content) {
+    let cwd = env::current_dir()?;
+    let environments = templates::load_environments();
+    let detected = templates::detect_environments(&cwd, &environments);
+    let all_snippets = templates::load_snippets();
+
+    match pick_snippet(&all_snippets, &detected, "Enter to copy · Esc to cancel")? {
+        Some(snippet) => {
+            if copy_to_clipboard(snippet.content.trim()) {
                 println!("\x1b[32m✓\x1b[0m  Copied to clipboard!");
             } else {
                 println!("Copy the snippet above into your plz.toml");
@@ -446,7 +334,6 @@ fn rewrite_template(content: &str, task_name: &str) -> String {
         if !result.is_empty() {
             result.push('\n');
         }
-        // Replace [tasks.xxx] and [env.xxx] headers with the new task name
         if line.starts_with("[tasks.") {
             result.push_str(&format!("[tasks.{task_name}]"));
         } else {
@@ -483,17 +370,20 @@ pub fn add_task(name: Option<String>) -> Result<()> {
         }
     };
 
-    match pick_template("Enter to add · Esc to cancel")? {
-        Some(idx) => {
-            let template = &TEMPLATES[idx];
-            let snippet = rewrite_template(template.content, &task_name);
+    let environments = templates::load_environments();
+    let detected = templates::detect_environments(&cwd, &environments);
+    let all_snippets = templates::load_snippets();
+
+    match pick_snippet(&all_snippets, &detected, "Enter to add · Esc to cancel")? {
+        Some(snippet) => {
+            let content = rewrite_template(snippet.content.trim(), &task_name);
 
             let mut existing = std::fs::read_to_string(&target_path)?;
             if !existing.ends_with('\n') {
                 existing.push('\n');
             }
             existing.push('\n');
-            existing.push_str(&snippet);
+            existing.push_str(&content);
             existing.push('\n');
 
             std::fs::write(&target_path, existing)?;
@@ -542,51 +432,112 @@ fn copy_to_clipboard(text: &str) -> bool {
     child.wait().is_ok_and(|s| s.success())
 }
 
+fn check_dir_writable(dir: &std::path::Path) -> bool {
+    let target = if dir.is_dir() {
+        dir.to_path_buf()
+    } else if let Some(parent) = dir.parent() {
+        parent.to_path_buf()
+    } else {
+        return false;
+    };
+    if !target.exists() {
+        return true;
+    }
+    let probe = target.join(".plz_write_test");
+    match std::fs::File::create(&probe) {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
 pub fn setup() -> Result<()> {
     let plz_dir =
         config_dir().ok_or_else(|| anyhow::anyhow!("Could not determine config directory"))?;
-    let defaults_dir = plz_dir.join("defaults");
 
-    cliclack::intro("🙏 plz plz 🙏")?;
+    let templates_dir = plz_dir.join("templates");
+    let user_template_path = plz_dir.join("user.plz.toml");
 
-    if defaults_dir.exists() {
-        cliclack::log::info(format!("Defaults directory: {}", defaults_dir.display()))?;
-        let mut entries: Vec<_> = std::fs::read_dir(&defaults_dir)?
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().is_some_and(|ext| ext == "toml"))
-            .collect();
-        entries.sort_by_key(|e| e.file_name());
-        for entry in &entries {
-            cliclack::log::info(format!("  {}", entry.file_name().to_string_lossy()))?;
+    cliclack::intro("plz setup")?;
+
+    let perm_hint = format!(
+        "Try: chmod u+w {} or set PLZ_CONFIG_DIR to a writable path",
+        plz_dir.display()
+    );
+
+    // Check write permissions early
+    if plz_dir.exists() && !check_dir_writable(&plz_dir) {
+        cliclack::outro(format!(
+            "{} is not writable. {perm_hint}",
+            plz_dir.display()
+        ))?;
+        return Ok(());
+    }
+    if !plz_dir.exists() && !check_dir_writable(&plz_dir) {
+        cliclack::outro(format!(
+            "Cannot create {} (parent directory is not writable). {perm_hint}",
+            plz_dir.display(),
+        ))?;
+        return Ok(());
+    }
+
+    if !plz_dir.exists() {
+        if let Err(e) = std::fs::create_dir_all(&plz_dir) {
+            cliclack::outro(format!("Could not create {}: {e}", plz_dir.display()))?;
+            return Ok(());
         }
-        cliclack::outro("Edit the files above to customize the tasks offered by `plz init`.")?;
+        cliclack::log::step(format!("Created {}", plz_dir.display()))?;
     } else {
-        let should_create: bool = cliclack::confirm(format!(
-            "Create defaults directory at {}?",
-            defaults_dir.display()
-        ))
-        .interact()?;
+        cliclack::log::step(format!("{} already exists", plz_dir.display()))?;
+    }
 
-        if !should_create {
-            cliclack::outro("Skipped.")?;
-        } else {
-            std::fs::create_dir_all(&defaults_dir)?;
+    if !user_template_path.exists() {
+        let content = r#"[template]
+description = "Custom tasks"
+env = "uv"
 
-            for (name, _, content) in DEFAULTS {
-                let path = defaults_dir.join(format!("{name}.plz.toml"));
-                let scaffold = generate_scaffold(content);
-                std::fs::write(&path, scaffold)?;
-                cliclack::log::success(format!("Created {name}.plz.toml"))?;
+[tasks.hello]
+run = "echo hello"
+"#;
+        match std::fs::write(&user_template_path, content) {
+            Ok(()) => {
+                cliclack::log::step(format!(
+                    "Added user template: {}",
+                    user_template_path.display()
+                ))?;
             }
+            Err(e) => {
+                cliclack::log::warning(format!("Could not create user template: {e}"))?;
+            }
+        }
+    } else if std::fs::OpenOptions::new()
+        .write(true)
+        .open(&user_template_path)
+        .is_err()
+    {
+        cliclack::log::warning(format!(
+            "User template is not writable: {}. {perm_hint}",
+            user_template_path.display(),
+        ))?;
+    } else {
+        cliclack::log::step(format!(
+            "User template already exists: {}",
+            user_template_path.display()
+        ))?;
+    }
 
-            cliclack::outro(format!(
-                "Edit files in {} to customize the tasks offered by `plz init`.",
-                defaults_dir.display()
-            ))?;
+    if !templates_dir.exists() {
+        if let Err(e) = std::fs::create_dir_all(&templates_dir) {
+            cliclack::log::warning(format!("Could not create {}: {e}", templates_dir.display()))?;
         }
     }
 
-    hooks::interactive_install_for_cwd()?;
+    cliclack::outro(format!(
+        "Add files to {} to customize templates for plz init",
+        templates_dir.display()
+    ))?;
 
     Ok(())
 }

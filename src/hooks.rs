@@ -241,21 +241,6 @@ pub fn interactive_install(config: &PlzConfig, base_dir: &Path, interactive: boo
 }
 
 /// Variant that auto-discovers config from cwd (for `plz plz`).
-pub fn interactive_install_for_cwd() -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let config_path = ["plz.toml", ".plz.toml"]
-        .iter()
-        .map(|n| cwd.join(n))
-        .find(|p| p.exists());
-
-    let Some(config_path) = config_path else {
-        return Ok(());
-    };
-
-    let cfg = crate::config::load(&config_path)?;
-    let base_dir = config_path.parent().unwrap();
-    interactive_install(&cfg, base_dir, true)
-}
 
 #[cfg(test)]
 mod tests {

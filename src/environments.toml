@@ -1,0 +1,12 @@
+[pnpm]
+patterns = ["pnpm-lock.yaml"]
+alternative_to = ["npm"]
+
+[npm]
+patterns = ["package-lock.json", "package.json"]
+
+[uv]
+patterns = ["uv.lock"]
+
+[rust]
+patterns = ["Cargo.toml"]
