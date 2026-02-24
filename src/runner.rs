@@ -1,7 +1,39 @@
-use crate::config::{FailHook, PlzConfig};
+use crate::config::{FailHook, PlzConfig, Task};
 use anyhow::{Result, bail};
 use std::path::Path;
 use std::process::Command;
+
+enum TaskRef {
+    TopLevel(String),
+    Group(String, String),
+}
+
+fn parse_task_ref(cmd: &str) -> Option<TaskRef> {
+    let ref_name = cmd.strip_prefix("plz:")?;
+    match ref_name.split_once(':') {
+        Some((group, task)) => Some(TaskRef::Group(group.into(), task.into())),
+        None => Some(TaskRef::TopLevel(ref_name.into())),
+    }
+}
+
+fn resolve_task_ref<'a>(config: &'a PlzConfig, task_ref: &TaskRef) -> Result<(&'a Task, String)> {
+    match task_ref {
+        TaskRef::TopLevel(name) => {
+            let task = config.tasks.get(name.as_str()).ok_or_else(|| {
+                anyhow::anyhow!("\"{name}\" isn't a task. Run `plz` to see all commands.")
+            })?;
+            Ok((task, name.clone()))
+        }
+        TaskRef::Group(group, task_name) => {
+            let task = config.get_group_task(group, task_name).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "\"{group}:{task_name}\" isn't a task. Run `plz {group}` to see group tasks."
+                )
+            })?;
+            Ok((task, format!("{group}:{task_name}")))
+        }
+    }
+}
 
 pub fn run_task(
     config: &PlzConfig,
@@ -9,7 +41,10 @@ pub fn run_task(
     base_dir: &Path,
     interactive: bool,
 ) -> Result<()> {
-    run_task_impl(config, task_name, base_dir, interactive, true, &[])
+    let task = config.tasks.get(task_name).ok_or_else(|| {
+        anyhow::anyhow!("\"{task_name}\" isn't a task. Run `plz` to see all commands.")
+    })?;
+    run_task_core(config, task, task_name, base_dir, interactive, true, &[])
 }
 
 pub fn run_task_with_args(
@@ -19,21 +54,70 @@ pub fn run_task_with_args(
     interactive: bool,
     extra_args: &[String],
 ) -> Result<()> {
-    run_task_impl(config, task_name, base_dir, interactive, true, extra_args)
+    let task = config.tasks.get(task_name).ok_or_else(|| {
+        anyhow::anyhow!("\"{task_name}\" isn't a task. Run `plz` to see all commands.")
+    })?;
+    run_task_core(
+        config,
+        task,
+        task_name,
+        base_dir,
+        interactive,
+        true,
+        extra_args,
+    )
 }
 
-fn run_task_impl(
+pub fn run_group_task(
     config: &PlzConfig,
+    group_name: &str,
     task_name: &str,
+    base_dir: &Path,
+    interactive: bool,
+) -> Result<()> {
+    let task = config.get_group_task(group_name, task_name).ok_or_else(|| {
+        anyhow::anyhow!(
+            "\"{group_name}:{task_name}\" isn't a task. Run `plz {group_name}` to see group tasks."
+        )
+    })?;
+    let display = format!("{group_name}:{task_name}");
+    run_task_core(config, task, &display, base_dir, interactive, true, &[])
+}
+
+pub fn run_group_task_with_args(
+    config: &PlzConfig,
+    group_name: &str,
+    task_name: &str,
+    base_dir: &Path,
+    interactive: bool,
+    extra_args: &[String],
+) -> Result<()> {
+    let task = config.get_group_task(group_name, task_name).ok_or_else(|| {
+        anyhow::anyhow!(
+            "\"{group_name}:{task_name}\" isn't a task. Run `plz {group_name}` to see group tasks."
+        )
+    })?;
+    let display = format!("{group_name}:{task_name}");
+    run_task_core(
+        config,
+        task,
+        &display,
+        base_dir,
+        interactive,
+        true,
+        extra_args,
+    )
+}
+
+fn run_task_core(
+    config: &PlzConfig,
+    task: &Task,
+    _display_name: &str,
     base_dir: &Path,
     interactive: bool,
     run_hooks: bool,
     extra_args: &[String],
 ) -> Result<()> {
-    let task = config.tasks.get(task_name).ok_or_else(|| {
-        anyhow::anyhow!("\"{task_name}\" isn't a task. Run `plz` to see all commands.")
-    })?;
-
     let work_dir = match &task.dir {
         Some(d) => base_dir.join(d),
         None => base_dir.to_path_buf(),
@@ -81,7 +165,26 @@ fn run_task_impl(
         }
     }
 
-    result
+    if result.is_err() { result } else { Ok(()) }
+}
+
+fn run_ref_task(
+    config: &PlzConfig,
+    task_ref: &TaskRef,
+    base_dir: &Path,
+    interactive: bool,
+    run_hooks: bool,
+) -> Result<()> {
+    let (task, display) = resolve_task_ref(config, task_ref)?;
+    run_task_core(
+        config,
+        task,
+        &display,
+        base_dir,
+        interactive,
+        run_hooks,
+        &[],
+    )
 }
 
 fn run_command_or_ref(
@@ -91,8 +194,8 @@ fn run_command_or_ref(
     base_dir: &Path,
     interactive: bool,
 ) -> Result<()> {
-    if let Some(ref_name) = cmd.strip_prefix("plz:") {
-        return run_task(config, ref_name, base_dir, interactive);
+    if let Some(task_ref) = parse_task_ref(cmd) {
+        return run_ref_task(config, &task_ref, base_dir, interactive, true);
     }
     exec_shell(cmd, work_dir)
 }
@@ -135,6 +238,14 @@ fn print_summary(results: &[(String, bool)]) {
     eprintln!("\nRan {total} tasks: {}", parts.join("  "));
 }
 
+fn lookup_task_for_failure<'a>(config: &'a PlzConfig, name: &str) -> Option<&'a Task> {
+    if let Some((group, task_name)) = name.split_once(':') {
+        config.get_group_task(group, task_name)
+    } else {
+        config.tasks.get(name)
+    }
+}
+
 /// Process deferred failures: run each task's fail_hook in succession,
 /// asking "continue?" between unresolved ones.
 fn handle_deferred_failures(
@@ -144,7 +255,7 @@ fn handle_deferred_failures(
     interactive: bool,
 ) -> Result<()> {
     for (i, failure) in failures.iter().enumerate() {
-        let task = config.tasks.get(&failure.name);
+        let task = lookup_task_for_failure(config, &failure.name);
         let hook = task.and_then(|t| t.fail_hook.as_ref());
 
         if let Some(hook) = hook {
@@ -192,13 +303,17 @@ fn run_serial_commands(
 
     for cmd in cmds {
         let wrapped = wrap(cmd);
-        if let Some(ref_name) = wrapped.strip_prefix("plz:") {
-            match run_task_impl(config, ref_name, base_dir, interactive, false, &[]) {
-                Ok(()) => task_results.push((ref_name.to_string(), true)),
+        if let Some(task_ref) = parse_task_ref(&wrapped) {
+            let display = match &task_ref {
+                TaskRef::TopLevel(n) => n.clone(),
+                TaskRef::Group(g, t) => format!("{g}:{t}"),
+            };
+            match run_ref_task(config, &task_ref, base_dir, interactive, false) {
+                Ok(()) => task_results.push((display, true)),
                 Err(e) => {
-                    task_results.push((ref_name.to_string(), false));
+                    task_results.push((display.clone(), false));
                     failures.push(DeferredFailure {
-                        name: ref_name.to_string(),
+                        name: display,
                         error: e,
                     });
                 }
@@ -227,12 +342,12 @@ fn run_parallel_commands(
     interactive: bool,
 ) -> Result<()> {
     let mut children = Vec::new();
-    let mut plz_refs = Vec::new();
+    let mut plz_refs: Vec<TaskRef> = Vec::new();
 
     for cmd in cmds {
         let wrapped = wrap(cmd);
-        if let Some(ref_name) = wrapped.strip_prefix("plz:") {
-            plz_refs.push(ref_name.to_string());
+        if let Some(task_ref) = parse_task_ref(&wrapped) {
+            plz_refs.push(task_ref);
         } else {
             eprintln!("→ {wrapped} &");
             let child = Command::new("/bin/sh")
@@ -248,13 +363,17 @@ fn run_parallel_commands(
     let mut task_results: Vec<(String, bool)> = Vec::new();
     let mut failures: Vec<DeferredFailure> = Vec::new();
 
-    for ref_name in &plz_refs {
-        match run_task_impl(config, ref_name, base_dir, interactive, false, &[]) {
-            Ok(()) => task_results.push((ref_name.clone(), true)),
+    for task_ref in &plz_refs {
+        let display = match task_ref {
+            TaskRef::TopLevel(n) => n.clone(),
+            TaskRef::Group(g, t) => format!("{g}:{t}"),
+        };
+        match run_ref_task(config, task_ref, base_dir, interactive, false) {
+            Ok(()) => task_results.push((display, true)),
             Err(e) => {
-                task_results.push((ref_name.clone(), false));
+                task_results.push((display.clone(), false));
                 failures.push(DeferredFailure {
-                    name: ref_name.clone(),
+                    name: display,
                     error: e,
                 });
             }

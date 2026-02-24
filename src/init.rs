@@ -37,6 +37,7 @@ pub fn parse_default(toml: &str) -> Option<(DocumentMut, Vec<(String, Option<Str
     Some((doc, tasks))
 }
 
+#[allow(dead_code)]
 pub fn add_suffix_to_toml(
     toml: &str,
     suffix: &str,
@@ -57,6 +58,52 @@ pub fn add_suffix_to_toml(
             &format!("\"plz {name}-{suffix}\""),
         );
     }
+    result
+}
+
+pub fn convert_to_taskgroup(
+    content: &str,
+    group_name: &str,
+    task_names: &[(String, Option<String>)],
+    template_env: &str,
+) -> String {
+    let mut result = content.to_string();
+
+    // Replace [tasks.X] with [taskgroup.GROUP.X]
+    for (name, _) in task_names {
+        result = result.replace(
+            &format!("[tasks.{name}]"),
+            &format!("[taskgroup.{group_name}.{name}]"),
+        );
+    }
+
+    // Update plz references: plz:task → plz:group:task, plz task → plz group task
+    for (name, _) in task_names {
+        result = result.replace(
+            &format!("\"plz:{name}\""),
+            &format!("\"plz:{group_name}:{name}\""),
+        );
+        result = result.replace(
+            &format!("\"plz {name}\""),
+            &format!("\"plz {group_name} {name}\""),
+        );
+    }
+
+    // Extract common env into [taskgroup.GROUP.extends] if tasks use a shared env
+    let env_line = format!("env = \"{template_env}\"");
+    if result.lines().any(|l| l.trim() == env_line) {
+        // Remove per-task env lines that match the template env
+        let lines: Vec<&str> = result.lines().collect();
+        let filtered: Vec<&str> = lines.into_iter().filter(|l| l.trim() != env_line).collect();
+        result = filtered.join("\n");
+
+        // Prepend extends section
+        result = format!(
+            "[taskgroup.{group_name}.extends]\n{env_line}\n\n{}",
+            result.trim_start()
+        );
+    }
+
     result
 }
 
@@ -187,7 +234,7 @@ pub fn run() -> Result<()> {
 
     // Build output from selected templates
     let mut output = String::new();
-    let needs_suffix = selected.len() > 1;
+    let use_taskgroups = selected.len() > 1;
 
     for template_name in &selected {
         let template = sorted_templates
@@ -197,13 +244,11 @@ pub fn run() -> Result<()> {
 
         let content = templates::strip_template_section(&template.content);
 
-        if needs_suffix {
+        if use_taskgroups {
             if let Some((_, tasks)) = parse_default(&content) {
-                let suffixed = add_suffix_to_toml(&content, template_name, &tasks);
-                writeln!(output, "# {}", template.name)?;
-                write!(output, "{}", suffixed.trim())?;
+                let grouped = convert_to_taskgroup(&content, template_name, &tasks, &template.env);
+                write!(output, "{}", grouped.trim())?;
             } else {
-                writeln!(output, "# {}", template.name)?;
                 write!(output, "{}", content.trim())?;
             }
         } else {

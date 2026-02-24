@@ -41,11 +41,74 @@ pub struct GlobalSettings {
     pub dir: Option<String>,
 }
 
+#[derive(Debug)]
+pub struct TaskGroup {
+    pub extends: Option<GlobalSettings>,
+    pub tasks: HashMap<String, Task>,
+}
+
+impl<'de> Deserialize<'de> for TaskGroup {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct TaskGroupVisitor;
+
+        impl<'de> Visitor<'de> for TaskGroupVisitor {
+            type Value = TaskGroup;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a task group table with optional 'extends' and task entries")
+            }
+
+            fn visit_map<M>(self, mut map: M) -> std::result::Result<TaskGroup, M::Error>
+            where
+                M: de::MapAccess<'de>,
+            {
+                let mut extends = None;
+                let mut tasks = HashMap::new();
+
+                while let Some(key) = map.next_key::<String>()? {
+                    if key == "extends" {
+                        extends = Some(map.next_value::<GlobalSettings>()?);
+                    } else {
+                        tasks.insert(key, map.next_value::<Task>()?);
+                    }
+                }
+
+                Ok(TaskGroup { extends, tasks })
+            }
+        }
+
+        deserializer.deserialize_map(TaskGroupVisitor)
+    }
+}
+
+impl JsonSchema for TaskGroup {
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("TaskGroup")
+    }
+
+    fn json_schema(generator: &mut SchemaGenerator) -> schemars::Schema {
+        json_schema!({
+            "type": "object",
+            "description": "A group of related tasks with optional shared defaults",
+            "properties": {
+                "extends": generator.subschema_for::<GlobalSettings>()
+            },
+            "additionalProperties": generator.subschema_for::<Task>()
+        })
+    }
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct PlzConfig {
     /// Global defaults that apply to all tasks (can be overridden per-task)
     #[serde(default)]
     pub extends: Option<GlobalSettings>,
+    /// Task groups for namespacing related tasks (e.g. [taskgroup.rust.test])
+    #[serde(default)]
+    pub taskgroup: Option<HashMap<String, TaskGroup>>,
     /// Tasks to run, keyed by name (e.g. [tasks.build]). Run with `plz <name>`.
     pub tasks: HashMap<String, Task>,
 }
@@ -235,7 +298,87 @@ pub fn load(path: &Path) -> Result<PlzConfig> {
         }
     }
 
+    // Apply extends cascade to taskgroup tasks:
+    // top-level [extends] → [taskgroup.X.extends] → per-task values
+    if let Some(ref mut groups) = config.taskgroup {
+        for (group_name, group) in groups.iter_mut() {
+            // Compute effective extends: top-level, then group overrides
+            let effective_env = group
+                .extends
+                .as_ref()
+                .and_then(|e| e.tool_env.clone())
+                .or_else(|| config.extends.as_ref().and_then(|e| e.tool_env.clone()));
+            let effective_dir = group
+                .extends
+                .as_ref()
+                .and_then(|e| e.dir.clone())
+                .or_else(|| config.extends.as_ref().and_then(|e| e.dir.clone()));
+
+            for task in group.tasks.values_mut() {
+                if task.tool_env.is_none() {
+                    task.tool_env.clone_from(&effective_env);
+                }
+                if task.dir.is_none() {
+                    task.dir.clone_from(&effective_dir);
+                }
+            }
+
+            // Clear empty-string opt-outs
+            for task in group.tasks.values_mut() {
+                if task.tool_env.as_deref() == Some("") {
+                    task.tool_env = None;
+                }
+                if task.dir.as_deref() == Some("") {
+                    task.dir = None;
+                }
+            }
+
+            // Validate git_hook values in group tasks
+            for (task_name, task) in &group.tasks {
+                if let Some(ref hook) = task.git_hook {
+                    if !VALID_GIT_HOOKS.contains(&hook.as_str()) {
+                        bail!(
+                            "Task \"{group_name}:{task_name}\" has invalid git_hook \"{hook}\". Valid hooks: {}",
+                            VALID_GIT_HOOKS.join(", ")
+                        );
+                    }
+                }
+            }
+
+            // Extract comments from taskgroup tables
+            if let Some(group_table) = doc
+                .get("taskgroup")
+                .and_then(|v| v.as_table())
+                .and_then(|t| t.get(group_name.as_str()))
+                .and_then(|v| v.as_table())
+            {
+                for (key, item) in group_table.iter() {
+                    if key == "extends" {
+                        continue;
+                    }
+                    if let Some(task) = group.tasks.get_mut(key)
+                        && task.description.is_none()
+                        && let Some(decor) = item.as_table().map(|t| t.decor())
+                        && let Some(prefix) = decor.prefix().and_then(|p| p.as_str())
+                    {
+                        task.description = extract_comment(prefix);
+                    }
+                }
+            }
+        }
+    }
+
     Ok(config)
+}
+
+impl PlzConfig {
+    pub fn get_group(&self, name: &str) -> Option<&TaskGroup> {
+        self.taskgroup.as_ref()?.get(name)
+    }
+
+    pub fn get_group_task(&self, group: &str, task: &str) -> Option<&Task> {
+        self.get_group(group)?.tasks.get(task)
+    }
 }
 
 pub fn extract_comment(prefix: &str) -> Option<String> {

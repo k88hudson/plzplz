@@ -14,6 +14,16 @@
         }
       ]
     },
+    "taskgroup": {
+      "description": "Task groups for namespacing related tasks (e.g. [taskgroup.rust.test])",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "$ref": "#/$defs/TaskGroup"
+      }
+    },
     "tasks": {
       "description": "Tasks to run, keyed by name (e.g. [tasks.build]). Run with `plz <name>`.",
       "type": "object",
@@ -154,6 +164,18 @@
             "type": "string"
           }
         }
+      }
+    },
+    "TaskGroup": {
+      "description": "A group of related tasks with optional shared defaults",
+      "type": "object",
+      "properties": {
+        "extends": {
+          "$ref": "#/$defs/GlobalSettings"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/Task"
       }
     }
   }

@@ -23,6 +23,7 @@ pub fn find_git_hooks_dir(base_dir: &Path) -> Result<PathBuf> {
 }
 
 /// Group tasks by their git_hook stage. Returns sorted map for deterministic output.
+/// Group tasks are stored as "group:task" format.
 pub fn tasks_by_stage(config: &PlzConfig) -> BTreeMap<String, Vec<String>> {
     let mut stages: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut task_names: Vec<&String> = config.tasks.keys().collect();
@@ -31,6 +32,23 @@ pub fn tasks_by_stage(config: &PlzConfig) -> BTreeMap<String, Vec<String>> {
         let task = &config.tasks[name];
         if let Some(ref hook) = task.git_hook {
             stages.entry(hook.clone()).or_default().push(name.clone());
+        }
+    }
+    if let Some(ref groups) = config.taskgroup {
+        let mut group_names: Vec<&String> = groups.keys().collect();
+        group_names.sort();
+        for gname in group_names {
+            let group = &groups[gname];
+            let mut gtask_names: Vec<&String> = group.tasks.keys().collect();
+            gtask_names.sort();
+            for tname in gtask_names {
+                if let Some(ref hook) = group.tasks[tname].git_hook {
+                    stages
+                        .entry(hook.clone())
+                        .or_default()
+                        .push(format!("{gname}:{tname}"));
+                }
+            }
         }
     }
     stages
@@ -145,7 +163,11 @@ pub fn run_stage(
     eprintln!("\x1b[36m🙏 Running {stage} hook ({names})\x1b[0m");
 
     for name in task_names {
-        crate::runner::run_task(config, name, base_dir, interactive)?;
+        if let Some((group, task)) = name.split_once(':') {
+            crate::runner::run_group_task(config, group, task, base_dir, interactive)?;
+        } else {
+            crate::runner::run_task(config, name, base_dir, interactive)?;
+        }
     }
     eprintln!("\x1b[32m✓ {stage} hook passed\x1b[0m");
     Ok(())

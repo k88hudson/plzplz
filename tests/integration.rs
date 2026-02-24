@@ -349,6 +349,221 @@ dir = ""
     }
 
     #[test]
+    fn parse_taskgroup_basic() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.hello]
+run = "echo hello"
+
+[taskgroup.rust.test]
+run = "cargo test"
+
+[taskgroup.rust.build]
+run = "cargo build"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        assert!(cfg.get_group("rust").is_some());
+        assert!(cfg.get_group_task("rust", "test").is_some());
+        assert!(cfg.get_group_task("rust", "build").is_some());
+        assert_eq!(
+            cfg.get_group_task("rust", "test").unwrap().run.as_deref(),
+            Some("cargo test")
+        );
+    }
+
+    #[test]
+    fn taskgroup_extends_inherits_from_group() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.hello]
+run = "echo hello"
+
+[taskgroup.frontend.extends]
+env = "pnpm"
+dir = "packages/web"
+
+[taskgroup.frontend.build]
+run = "vite build"
+
+[taskgroup.frontend.dev]
+run = "vite dev"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        let build = cfg.get_group_task("frontend", "build").unwrap();
+        assert_eq!(build.tool_env.as_deref(), Some("pnpm"));
+        assert_eq!(build.dir.as_deref(), Some("packages/web"));
+        let dev = cfg.get_group_task("frontend", "dev").unwrap();
+        assert_eq!(dev.tool_env.as_deref(), Some("pnpm"));
+        assert_eq!(dev.dir.as_deref(), Some("packages/web"));
+    }
+
+    #[test]
+    fn taskgroup_cascade_top_level_to_group() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[extends]
+env = "pnpm"
+
+[tasks.hello]
+run = "echo hello"
+
+[taskgroup.web.build]
+run = "vite build"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        // Top-level extends cascades to group tasks
+        let build = cfg.get_group_task("web", "build").unwrap();
+        assert_eq!(build.tool_env.as_deref(), Some("pnpm"));
+    }
+
+    #[test]
+    fn taskgroup_group_extends_overrides_top_level() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[extends]
+env = "pnpm"
+dir = "default"
+
+[tasks.hello]
+run = "echo hello"
+
+[taskgroup.api.extends]
+env = "npm"
+dir = "backend"
+
+[taskgroup.api.serve]
+run = "node server.js"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        let serve = cfg.get_group_task("api", "serve").unwrap();
+        assert_eq!(serve.tool_env.as_deref(), Some("npm"));
+        assert_eq!(serve.dir.as_deref(), Some("backend"));
+    }
+
+    #[test]
+    fn taskgroup_task_overrides_group_extends() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.hello]
+run = "echo hello"
+
+[taskgroup.rust.extends]
+dir = "backend"
+
+[taskgroup.rust.test]
+run = "cargo test"
+
+[taskgroup.rust.special]
+run = "echo special"
+dir = "other"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        let test = cfg.get_group_task("rust", "test").unwrap();
+        assert_eq!(test.dir.as_deref(), Some("backend"));
+        let special = cfg.get_group_task("rust", "special").unwrap();
+        assert_eq!(special.dir.as_deref(), Some("other"));
+    }
+
+    #[test]
+    fn taskgroup_empty_string_opts_out() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[extends]
+env = "pnpm"
+
+[tasks.hello]
+run = "echo hello"
+
+[taskgroup.misc.extends]
+dir = "subdir"
+
+[taskgroup.misc.plain]
+run = "echo plain"
+env = ""
+dir = ""
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        let plain = cfg.get_group_task("misc", "plain").unwrap();
+        assert_eq!(plain.tool_env, None);
+        assert_eq!(plain.dir, None);
+    }
+
+    #[test]
+    fn taskgroup_validates_git_hook() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.hello]
+run = "echo hello"
+
+[taskgroup.rust.lint]
+run = "cargo clippy"
+git_hook = "not-a-hook"
+"#,
+        );
+        let err = config::load(&path).unwrap_err();
+        assert!(err.to_string().contains("invalid git_hook"), "got: {err}");
+    }
+
+    #[test]
+    fn taskgroup_comment_description() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.hello]
+run = "echo hello"
+
+# Run the tests
+[taskgroup.rust.test]
+run = "cargo test"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        assert_eq!(
+            cfg.get_group_task("rust", "test")
+                .unwrap()
+                .description
+                .as_deref(),
+            Some("Run the tests")
+        );
+    }
+
+    #[test]
+    fn get_group_returns_none_for_missing() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.hello]
+run = "echo hello"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        assert!(cfg.get_group("nonexistent").is_none());
+        assert!(cfg.get_group_task("nonexistent", "test").is_none());
+    }
+
+    #[test]
     fn parse_invalid_toml_errors() {
         let dir = TempDir::new().unwrap();
         let path = write_config(&dir, "this is not valid toml [[[");
@@ -598,6 +813,142 @@ run = "touch {}"
     }
 
     #[test]
+    fn run_group_task_simple() {
+        let dir = TempDir::new().unwrap();
+        let marker = dir.path().join("group_marker.txt");
+        let cfg = load_config(
+            &dir,
+            &format!(
+                r#"
+[tasks.hello]
+run = "echo hello"
+
+[taskgroup.rust.test]
+run = "touch {}"
+"#,
+                marker.display()
+            ),
+        );
+        runner::run_group_task(&cfg, "rust", "test", dir.path(), false).unwrap();
+        assert!(marker.exists());
+    }
+
+    #[test]
+    fn run_group_task_with_dir() {
+        let dir = TempDir::new().unwrap();
+        let subdir = dir.path().join("backend");
+        fs::create_dir(&subdir).unwrap();
+        let out = dir.path().join("grp_pwd.txt");
+        let cfg = load_config(
+            &dir,
+            &format!(
+                r#"
+[tasks.hello]
+run = "echo hello"
+
+[taskgroup.rust.extends]
+dir = "backend"
+
+[taskgroup.rust.wd]
+run = "pwd > {}"
+"#,
+                out.display()
+            ),
+        );
+        runner::run_group_task(&cfg, "rust", "wd", dir.path(), false).unwrap();
+        let content = fs::read_to_string(&out).unwrap();
+        assert!(content.trim().ends_with("backend"));
+    }
+
+    #[test]
+    fn run_group_task_unknown_errors() {
+        let dir = TempDir::new().unwrap();
+        let cfg = load_config(
+            &dir,
+            r#"
+[tasks.hello]
+run = "echo hello"
+
+[taskgroup.rust.test]
+run = "cargo test"
+"#,
+        );
+        let err = runner::run_group_task(&cfg, "rust", "nonexistent", dir.path(), false);
+        assert!(err.is_err());
+        assert!(err.unwrap_err().to_string().contains("isn't a task"));
+    }
+
+    #[test]
+    fn run_group_task_with_extra_args() {
+        let dir = TempDir::new().unwrap();
+        let out = dir.path().join("args_out.txt");
+        let cfg = load_config(
+            &dir,
+            &format!(
+                r#"
+[tasks.hello]
+run = "echo hello"
+
+[taskgroup.rust.echo]
+run = "echo > {}"
+"#,
+                out.display()
+            ),
+        );
+        let args = vec!["--nocapture".to_string()];
+        runner::run_group_task_with_args(&cfg, "rust", "echo", dir.path(), false, &args).unwrap();
+        assert!(out.exists());
+    }
+
+    #[test]
+    fn run_group_task_ref_in_serial() {
+        let dir = TempDir::new().unwrap();
+        let m1 = dir.path().join("gs1.txt");
+        let m2 = dir.path().join("gs2.txt");
+        let cfg = load_config(
+            &dir,
+            &format!(
+                r#"
+[tasks.main]
+run_serial = ["touch {}", "plz:grp:helper"]
+
+[taskgroup.grp.helper]
+run = "touch {}"
+"#,
+                m1.display(),
+                m2.display()
+            ),
+        );
+        runner::run_task(&cfg, "main", dir.path(), false).unwrap();
+        assert!(m1.exists());
+        assert!(m2.exists());
+    }
+
+    #[test]
+    fn run_group_task_ref_in_parallel() {
+        let dir = TempDir::new().unwrap();
+        let m1 = dir.path().join("gp1.txt");
+        let m2 = dir.path().join("gp2.txt");
+        let cfg = load_config(
+            &dir,
+            &format!(
+                r#"
+[tasks.main]
+run_parallel = ["touch {}", "plz:grp:helper"]
+
+[taskgroup.grp.helper]
+run = "touch {}"
+"#,
+                m1.display(),
+                m2.display()
+            ),
+        );
+        runner::run_task(&cfg, "main", dir.path(), false).unwrap();
+        assert!(m1.exists());
+        assert!(m2.exists());
+    }
+
+    #[test]
     fn run_parallel_with_task_ref() {
         let dir = TempDir::new().unwrap();
         let m1 = dir.path().join("p1.txt");
@@ -773,6 +1124,67 @@ run_serial = ["cargo fmt", "cargo clippy --fix --allow-dirty"]
         let (_, tasks) = init::parse_default(toml).unwrap();
         let result = init::add_suffix_to_toml(toml, "rust", &tasks);
         assert!(result.contains("plz fix-rust"), "got:\n{result}");
+    }
+
+    #[test]
+    fn convert_to_taskgroup_basic() {
+        let toml = r#"
+[tasks.dev]
+run = "cargo run"
+
+[tasks.build]
+run = "cargo build"
+"#;
+        let (_, tasks) = init::parse_default(toml).unwrap();
+        let result = init::convert_to_taskgroup(toml, "rust", &tasks, "rust");
+        assert!(result.contains("[taskgroup.rust.dev]"));
+        assert!(result.contains("[taskgroup.rust.build]"));
+        assert!(!result.contains("[tasks.dev]"));
+        assert!(!result.contains("[tasks.build]"));
+    }
+
+    #[test]
+    fn convert_to_taskgroup_extracts_env() {
+        let toml = r#"
+[tasks.dev]
+env = "pnpm"
+run = "vite"
+
+[tasks.build]
+env = "pnpm"
+run = "vite build"
+"#;
+        let (_, tasks) = init::parse_default(toml).unwrap();
+        let result = init::convert_to_taskgroup(toml, "pnpm", &tasks, "pnpm");
+        assert!(
+            result.contains("[taskgroup.pnpm.extends]"),
+            "missing extends: {result}"
+        );
+        assert!(
+            result.contains("env = \"pnpm\""),
+            "missing env in extends: {result}"
+        );
+        // Per-task env lines should be removed
+        let env_count = result.matches("env = \"pnpm\"").count();
+        assert_eq!(env_count, 1, "env should only appear in extends: {result}");
+    }
+
+    #[test]
+    fn convert_to_taskgroup_updates_plz_references() {
+        let toml = r#"
+[tasks.lint]
+run_serial = ["cargo clippy", "cargo fmt --check"]
+fail_hook = { suggest_command = "plz fix" }
+
+[tasks.fix]
+run_serial = ["cargo fmt", "cargo clippy --fix --allow-dirty"]
+"#;
+        let (_, tasks) = init::parse_default(toml).unwrap();
+        let result = init::convert_to_taskgroup(toml, "rust", &tasks, "rust");
+        assert!(
+            result.contains("plz rust fix"),
+            "should update plz references: {result}"
+        );
     }
 
     #[test]
@@ -1013,6 +1425,58 @@ git_hook = "pre-commit"
     fn find_git_hooks_dir_fails_without_git() {
         let dir = TempDir::new().unwrap();
         assert!(hooks::find_git_hooks_dir(dir.path()).is_err());
+    }
+
+    #[test]
+    fn tasks_by_stage_includes_group_tasks() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.lint]
+run = "cargo clippy"
+git_hook = "pre-commit"
+
+[taskgroup.rust.fmt]
+run = "cargo fmt --check"
+git_hook = "pre-commit"
+
+[taskgroup.rust.test]
+run = "cargo test"
+git_hook = "pre-push"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        let stages = hooks::tasks_by_stage(&cfg);
+        assert_eq!(stages.len(), 2);
+        let pre_commit = &stages["pre-commit"];
+        assert!(pre_commit.contains(&"lint".to_string()));
+        assert!(pre_commit.contains(&"rust:fmt".to_string()));
+        let pre_push = &stages["pre-push"];
+        assert!(pre_push.contains(&"rust:test".to_string()));
+    }
+
+    #[test]
+    fn run_stage_executes_group_tasks() {
+        let dir = TempDir::new().unwrap();
+        let marker = dir.path().join("group_hook_ran.txt");
+        let path = write_config(
+            &dir,
+            &format!(
+                r#"
+[tasks.hello]
+run = "echo hello"
+
+[taskgroup.rust.check]
+run = "touch {}"
+git_hook = "pre-commit"
+"#,
+                marker.display()
+            ),
+        );
+        let cfg = config::load(&path).unwrap();
+        hooks::run_stage(&cfg, "pre-commit", dir.path(), false).unwrap();
+        assert!(marker.exists());
     }
 
     #[test]
@@ -1267,6 +1731,129 @@ run = "echo hello"
             .stderr(predicate::str::contains(
                 "No task specified (running in non-interactive mode)",
             ));
+    }
+
+    #[test]
+    fn cli_run_group_task() {
+        let dir = TempDir::new().unwrap();
+        let marker = dir.path().join("grp_ran.txt");
+        fs::write(
+            dir.path().join("plz.toml"),
+            format!(
+                r#"
+[tasks.hello]
+run = "echo hello"
+
+[taskgroup.rust.test]
+run = "touch {}"
+"#,
+                marker.display()
+            ),
+        )
+        .unwrap();
+
+        plz()
+            .args(["rust", "test"])
+            .current_dir(dir.path())
+            .assert()
+            .success();
+        assert!(marker.exists());
+    }
+
+    #[test]
+    fn cli_run_group_task_with_args() {
+        let dir = TempDir::new().unwrap();
+        let out = dir.path().join("grp_args.txt");
+        fs::write(
+            dir.path().join("plz.toml"),
+            format!(
+                r#"
+[tasks.hello]
+run = "echo hello"
+
+[taskgroup.rust.echo]
+run = "echo > {}"
+"#,
+                out.display()
+            ),
+        )
+        .unwrap();
+
+        plz()
+            .args(["rust", "echo", "--", "--nocapture"])
+            .current_dir(dir.path())
+            .assert()
+            .success();
+        assert!(out.exists());
+    }
+
+    #[test]
+    fn cli_top_level_wins_over_group() {
+        let dir = TempDir::new().unwrap();
+        let top_marker = dir.path().join("top.txt");
+        fs::write(
+            dir.path().join("plz.toml"),
+            format!(
+                r#"
+[tasks.rust]
+run = "touch {}"
+
+[taskgroup.rust.test]
+run = "echo test"
+"#,
+                top_marker.display()
+            ),
+        )
+        .unwrap();
+
+        plz().arg("rust").current_dir(dir.path()).assert().success();
+        assert!(top_marker.exists());
+    }
+
+    #[test]
+    fn cli_group_no_task_non_interactive_errors() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("plz.toml"),
+            r#"
+[tasks.hello]
+run = "echo hello"
+
+[taskgroup.rust.test]
+run = "cargo test"
+"#,
+        )
+        .unwrap();
+
+        plz()
+            .arg("rust")
+            .current_dir(dir.path())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("No task specified for group"));
+    }
+
+    #[test]
+    fn cli_group_unknown_task_errors() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("plz.toml"),
+            r#"
+[tasks.hello]
+run = "echo hello"
+
+[taskgroup.rust.test]
+run = "cargo test"
+"#,
+        )
+        .unwrap();
+
+        plz()
+            .args(["rust", "nonexistent"])
+            .current_dir(dir.path())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("isn't a task"));
     }
 
     #[test]
