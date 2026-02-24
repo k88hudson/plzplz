@@ -224,8 +224,13 @@ fn has_uninstalled_hooks(config: &PlzConfig, base_dir: &Path) -> bool {
 }
 
 /// Show a grey tip if hooks are configured but not installed.
+/// If ~/.plz doesn't exist yet, suggest running `plz plz` first.
 pub fn hint_uninstalled_hooks(config: &PlzConfig, base_dir: &Path) {
     if std::env::var_os("PLZ_COMMAND").is_some() {
+        return;
+    }
+    if !settings::config_dir_exists() {
+        eprintln!("\x1b[2mRun `plz plz` to set up custom settings and templates.\x1b[0m");
         return;
     }
     if !settings::load().show_hints {

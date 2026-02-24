@@ -32,6 +32,10 @@ pub fn config_dir() -> Option<PathBuf> {
     }
 }
 
+pub fn config_dir_exists() -> bool {
+    config_dir().is_some_and(|d| d.is_dir())
+}
+
 pub fn settings_path() -> Option<PathBuf> {
     config_dir().map(|d| d.join("settings.toml"))
 }

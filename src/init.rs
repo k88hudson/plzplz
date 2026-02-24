@@ -301,7 +301,9 @@ pub fn run() -> Result<()> {
 }
 
 fn print_templates_hint(cfg_dir: &Option<PathBuf>) {
-    if let Some(dir) = cfg_dir {
+    if !settings::config_dir_exists() {
+        eprintln!("\x1b[2mRun `plz plz` to set up custom settings and templates.\x1b[0m");
+    } else if let Some(dir) = cfg_dir {
         eprintln!(
             "\x1b[2mAdd templates to {} to customize\x1b[0m",
             dir.join("templates").display()
