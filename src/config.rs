@@ -110,6 +110,7 @@ pub struct PlzConfig {
     #[serde(default)]
     pub taskgroup: Option<HashMap<String, TaskGroup>>,
     /// Tasks to run, keyed by name (e.g. [tasks.build]). Run with `plz <name>`.
+    #[serde(default)]
     pub tasks: HashMap<String, Task>,
 }
 

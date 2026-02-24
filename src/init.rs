@@ -167,11 +167,16 @@ pub fn run() -> Result<()> {
         cliclack::log::info(format!("Detected: {}", detected.join(", ")))?;
     }
 
-    // Sort templates: detected envs first, then alternatives, then others
+    // Sort templates: detected envs first (user templates before embedded), then alternatives, then others
     let mut sorted_templates: Vec<&TemplateMeta> = Vec::new();
-    // Detected first
+    // Detected first — user templates before embedded for the same env
     for t in &all_templates {
-        if detected.contains(&t.env) {
+        if detected.contains(&t.env) && t.is_user {
+            sorted_templates.push(t);
+        }
+    }
+    for t in &all_templates {
+        if detected.contains(&t.env) && !t.is_user {
             sorted_templates.push(t);
         }
     }
@@ -214,21 +219,29 @@ pub fn run() -> Result<()> {
         })
         .collect();
 
-    // Pre-select templates whose env is detected AND not an alternative
+    // Pre-select only one template: prefer user template for a detected env, else first detected
     let initial: Vec<&str> = sorted_templates
         .iter()
-        .filter(|t| detected.contains(&t.env) && !alternative_envs.contains(&t.env))
-        .map(|t| t.name.as_str())
-        .collect();
+        .find(|t| detected.contains(&t.env) && !alternative_envs.contains(&t.env))
+        .map(|t| vec![t.name.as_str()])
+        .unwrap_or_default();
 
-    let selected: Vec<&str> = cliclack::multiselect("Which templates?")
+    let selected: Vec<&str> = match cliclack::multiselect("Which templates?")
         .items(&items)
         .initial_values(initial)
         .required(false)
-        .interact()?;
+        .interact()
+    {
+        Ok(s) => s,
+        Err(_) => {
+            print_templates_hint(&cfg_dir);
+            return Ok(());
+        }
+    };
 
     if selected.is_empty() {
         cliclack::outro("No templates selected, skipping plz.toml creation")?;
+        print_templates_hint(&cfg_dir);
         return Ok(());
     }
 
@@ -282,8 +295,18 @@ pub fn run() -> Result<()> {
     }
 
     cliclack::outro("Created plz.toml".to_string())?;
+    print_templates_hint(&cfg_dir);
 
     Ok(())
+}
+
+fn print_templates_hint(cfg_dir: &Option<PathBuf>) {
+    if let Some(dir) = cfg_dir {
+        eprintln!(
+            "\x1b[2mAdd templates to {} to customize\x1b[0m",
+            dir.join("templates").display()
+        );
+    }
 }
 
 fn pick_snippet(
@@ -504,8 +527,7 @@ pub fn setup() -> Result<()> {
 
     let templates_dir = plz_dir.join("templates");
     let user_template_path = plz_dir.join("user.plz.toml");
-
-    cliclack::intro("plz setup")?;
+    let settings_path = plz_dir.join("settings.toml");
 
     let perm_hint = format!(
         "Try: chmod u+w {} or set PLZ_CONFIG_DIR to a writable path",
@@ -514,13 +536,22 @@ pub fn setup() -> Result<()> {
 
     // Check write permissions early
     if plz_dir.exists() && !check_dir_writable(&plz_dir) {
+        cliclack::intro("plz setup")?;
         cliclack::outro(format!(
             "{} is not writable. {perm_hint}",
             plz_dir.display()
         ))?;
         return Ok(());
     }
-    if !plz_dir.exists() && !check_dir_writable(&plz_dir) {
+
+    // If .plz already exists, show settings editor
+    if plz_dir.exists() {
+        return setup_settings_editor(&settings_path);
+    }
+
+    cliclack::intro("plz setup")?;
+
+    if !check_dir_writable(&plz_dir) {
         cliclack::outro(format!(
             "Cannot create {} (parent directory is not writable). {perm_hint}",
             plz_dir.display(),
@@ -528,28 +559,24 @@ pub fn setup() -> Result<()> {
         return Ok(());
     }
 
-    if !plz_dir.exists() {
-        if let Err(e) = std::fs::create_dir_all(&plz_dir) {
-            cliclack::outro(format!("Could not create {}: {e}", plz_dir.display()))?;
-            return Ok(());
-        }
-        cliclack::log::step(format!("Created {}", plz_dir.display()))?;
-    } else {
-        cliclack::log::step(format!("{} already exists", plz_dir.display()))?;
+    if let Err(e) = std::fs::create_dir_all(&plz_dir) {
+        cliclack::outro(format!("Could not create {}: {e}", plz_dir.display()))?;
+        return Ok(());
     }
 
     if !user_template_path.exists() {
-        let content = r#"[template]
-description = "Custom tasks"
-env = "uv"
-
-[tasks.hello]
-run = "echo hello"
+        let content = r#"# Uncomment and edit to create a custom template for plz init
+# [template]
+# description = "Custom tasks"
+# env = "uv"
+#
+# [tasks.example]
+# run = "echo hello"
 "#;
         match std::fs::write(&user_template_path, content) {
             Ok(()) => {
                 cliclack::log::step(format!(
-                    "Added user template: {}",
+                    "Added example template: {}",
                     user_template_path.display()
                 ))?;
             }
@@ -557,20 +584,18 @@ run = "echo hello"
                 cliclack::log::warning(format!("Could not create user template: {e}"))?;
             }
         }
-    } else if std::fs::OpenOptions::new()
-        .write(true)
-        .open(&user_template_path)
-        .is_err()
-    {
-        cliclack::log::warning(format!(
-            "User template is not writable: {}. {perm_hint}",
-            user_template_path.display(),
-        ))?;
-    } else {
-        cliclack::log::step(format!(
-            "User template already exists: {}",
-            user_template_path.display()
-        ))?;
+    }
+
+    if !settings_path.exists() {
+        let content = "# show_hints = true\n";
+        match std::fs::write(&settings_path, content) {
+            Ok(()) => {
+                cliclack::log::step(format!("Added settings: {}", settings_path.display()))?;
+            }
+            Err(e) => {
+                cliclack::log::warning(format!("Could not create settings: {e}"))?;
+            }
+        }
     }
 
     if !templates_dir.exists() {
@@ -583,6 +608,81 @@ run = "echo hello"
         "Add files to {} to customize templates for plz init",
         templates_dir.display()
     ))?;
+
+    Ok(())
+}
+
+fn setup_settings_editor(settings_path: &std::path::Path) -> Result<()> {
+    let raw = settings::load_raw(settings_path);
+
+    cliclack::intro("plz settings")?;
+
+    // Display current settings with color coding
+    for (key, value, is_user_set) in &raw {
+        let entry = settings::ALL_SETTINGS
+            .iter()
+            .find(|e| e.key == *key)
+            .unwrap();
+        if *is_user_set {
+            // Green for user-set values
+            cliclack::log::step(format!(
+                "\x1b[32m{key} = {value}\x1b[0m  {}",
+                entry.description
+            ))?;
+        } else {
+            // Grey for default values
+            cliclack::log::step(format!(
+                "\x1b[2m{key} = {value}\x1b[0m  {}",
+                entry.description
+            ))?;
+        }
+    }
+
+    // Build multiselect with current values
+    let items: Vec<(&str, String, &str)> = settings::ALL_SETTINGS
+        .iter()
+        .map(|entry| {
+            (
+                entry.key,
+                format!("{} — {}", entry.key, entry.description),
+                "",
+            )
+        })
+        .collect();
+
+    let currently_enabled: Vec<&str> = raw
+        .iter()
+        .filter(|(_, value, _)| *value)
+        .map(|(key, _, _)| *key)
+        .collect();
+
+    let selected: Vec<&str> = match cliclack::multiselect("Toggle settings")
+        .items(&items)
+        .initial_values(currently_enabled)
+        .required(false)
+        .interact()
+    {
+        Ok(s) => s,
+        Err(_) => return Ok(()),
+    };
+
+    let values: Vec<(&str, bool)> = settings::ALL_SETTINGS
+        .iter()
+        .map(|entry| (entry.key, selected.contains(&entry.key)))
+        .collect();
+
+    // Only save if something changed
+    let changed = raw
+        .iter()
+        .zip(values.iter())
+        .any(|((_, old_val, _), (_, new_val))| old_val != new_val);
+
+    if changed {
+        settings::save(settings_path, &values)?;
+        cliclack::outro("Settings saved")?;
+    } else {
+        cliclack::outro("No changes")?;
+    }
 
     Ok(())
 }

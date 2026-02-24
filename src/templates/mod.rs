@@ -34,6 +34,7 @@ pub struct TemplateMeta {
     pub description: String,
     pub env: String,
     pub content: String,
+    pub is_user: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -80,32 +81,47 @@ pub fn detect_environments(cwd: &Path, environments: &HashMap<String, Environmen
 pub fn load_templates(config_dir: Option<&Path>) -> Vec<TemplateMeta> {
     let mut templates = Vec::new();
 
+    // Load user template first so it can be prioritized for its env
+    let mut user_template: Option<TemplateMeta> = None;
+    if let Some(dir) = config_dir {
+        let user_path = dir.join("user.plz.toml");
+        if let Ok(content) = std::fs::read_to_string(&user_path)
+            && let Some(meta) = parse_template_meta("user", &content, true)
+        {
+            user_template = Some(meta);
+        }
+    }
+
     for (name, content) in EMBEDDED_TEMPLATES {
-        if let Some(meta) = parse_template_meta(name, content) {
+        // If user template matches this env, insert user template before it
+        if let Some(ref ut) = user_template
+            && ut.env == *name
+        {
+            templates.push(ut.clone());
+        }
+        if let Some(meta) = parse_template_meta(name, content, false) {
             templates.push(meta);
         }
     }
 
-    // Load user template if it exists
-    if let Some(dir) = config_dir {
-        let user_path = dir.join("user.plz.toml");
-        if let Ok(content) = std::fs::read_to_string(&user_path)
-            && let Some(meta) = parse_template_meta("user", &content)
-        {
-            templates.push(meta);
-        }
+    // If user template env doesn't match any embedded template, append it
+    if let Some(ref ut) = user_template
+        && !EMBEDDED_TEMPLATES.iter().any(|(name, _)| *name == ut.env)
+    {
+        templates.push(ut.clone());
     }
 
     templates
 }
 
-fn parse_template_meta(name: &str, content: &str) -> Option<TemplateMeta> {
+fn parse_template_meta(name: &str, content: &str, is_user: bool) -> Option<TemplateMeta> {
     let header: TemplateFile = from_str(content).ok()?;
     Some(TemplateMeta {
         name: name.to_string(),
         description: header.template.description,
         env: header.template.env,
         content: content.to_string(),
+        is_user,
     })
 }
 

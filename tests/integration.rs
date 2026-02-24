@@ -549,6 +549,26 @@ run = "cargo test"
     }
 
     #[test]
+    fn parse_taskgroups_only_no_tasks() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[taskgroup.rust.test]
+run = "cargo test"
+
+[taskgroup.rust.build]
+run = "cargo build"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        assert!(cfg.tasks.is_empty());
+        assert_eq!(cfg.get_group("rust").unwrap().tasks.len(), 2);
+        assert!(cfg.get_group_task("rust", "test").is_some());
+        assert!(cfg.get_group_task("rust", "build").is_some());
+    }
+
+    #[test]
     fn get_group_returns_none_for_missing() {
         let dir = TempDir::new().unwrap();
         let path = write_config(
@@ -1196,6 +1216,69 @@ run_serial = ["cargo fmt", "cargo clippy --fix --allow-dirty"]
             assert!(parsed.is_some(), "Template {} failed to parse", t.name);
             let (_, tasks) = parsed.unwrap();
             assert!(!tasks.is_empty(), "Template {} has no tasks", t.name);
+        }
+    }
+
+    #[test]
+    fn user_template_listed_before_embedded_for_same_env() {
+        let dir = TempDir::new().unwrap();
+        let user_template = dir.path().join("user.plz.toml");
+        fs::write(
+            &user_template,
+            r#"[template]
+description = "My custom rust"
+env = "rust"
+
+[tasks.mybuild]
+run = "cargo build --release"
+"#,
+        )
+        .unwrap();
+
+        let all = templates::load_templates(Some(dir.path()));
+        let names: Vec<&str> = all.iter().map(|t| t.name.as_str()).collect();
+        let user_pos = names.iter().position(|n| *n == "user").unwrap();
+        let rust_pos = names.iter().position(|n| *n == "rust").unwrap();
+        assert!(
+            user_pos < rust_pos,
+            "user template should appear before embedded rust: {names:?}"
+        );
+        assert!(all[user_pos].is_user);
+        assert!(!all[rust_pos].is_user);
+    }
+
+    #[test]
+    fn user_template_appended_when_env_not_in_embedded() {
+        let dir = TempDir::new().unwrap();
+        let user_template = dir.path().join("user.plz.toml");
+        fs::write(
+            &user_template,
+            r#"[template]
+description = "My custom env"
+env = "custom"
+
+[tasks.hello]
+run = "echo hello"
+"#,
+        )
+        .unwrap();
+
+        let all = templates::load_templates(Some(dir.path()));
+        let last = all.last().unwrap();
+        assert_eq!(last.name, "user");
+        assert_eq!(last.env, "custom");
+        assert!(last.is_user);
+    }
+
+    #[test]
+    fn embedded_templates_not_marked_as_user() {
+        let all = templates::load_templates(None);
+        for t in &all {
+            assert!(
+                !t.is_user,
+                "embedded template {} should not be user",
+                t.name
+            );
         }
     }
 }

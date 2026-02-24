@@ -32,9 +32,6 @@
       }
     }
   },
-  "required": [
-    "tasks"
-  ],
   "$defs": {
     "GlobalSettings": {
       "type": "object",

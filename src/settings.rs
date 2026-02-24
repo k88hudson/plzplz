@@ -1,6 +1,18 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
+pub struct SettingEntry {
+    pub key: &'static str,
+    pub description: &'static str,
+    pub default: bool,
+}
+
+pub const ALL_SETTINGS: &[SettingEntry] = &[SettingEntry {
+    key: "show_hints",
+    description: "Show helpful tips and suggestions",
+    default: true,
+}];
+
 #[derive(Debug)]
 pub struct Settings {
     pub show_hints: bool,
@@ -29,6 +41,35 @@ pub fn load() -> Settings {
         return Settings::default();
     };
     load_from(&path)
+}
+
+/// Returns (value, is_user_set) for each setting key
+pub fn load_raw(path: &Path) -> Vec<(&'static str, bool, bool)> {
+    let doc = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|c| c.parse::<toml_edit::DocumentMut>().ok());
+
+    ALL_SETTINGS
+        .iter()
+        .map(|entry| {
+            let (value, is_user_set) = doc
+                .as_ref()
+                .and_then(|d| d.get(entry.key))
+                .and_then(|v| v.as_bool())
+                .map(|v| (v, true))
+                .unwrap_or((entry.default, false));
+            (entry.key, value, is_user_set)
+        })
+        .collect()
+}
+
+pub fn save(path: &Path, values: &[(&str, bool)]) -> anyhow::Result<()> {
+    let mut lines = Vec::new();
+    for (key, value) in values {
+        lines.push(format!("{key} = {value}"));
+    }
+    std::fs::write(path, lines.join("\n") + "\n")?;
+    Ok(())
 }
 
 pub fn load_from(path: &Path) -> Settings {
