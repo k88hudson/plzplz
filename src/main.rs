@@ -72,6 +72,8 @@ enum PlzCommand {
     Schema,
     /// Browse and copy example task snippets
     Example,
+    /// Update plz to the latest version
+    Update,
 }
 
 fn is_nested() -> bool {
@@ -142,6 +144,10 @@ const HELP_COMMANDS: &[HelpEntry] = &[
     HelpEntry {
         usage: "plz example",
         description: "Browse and copy example task snippets",
+    },
+    HelpEntry {
+        usage: "plz update",
+        description: "Update plz to the latest version",
     },
 ];
 
@@ -233,6 +239,7 @@ fn main() -> Result<()> {
                 return Ok(());
             }
             Some(PlzCommand::Example) => return init::help_templates(),
+            Some(PlzCommand::Update) => return init::self_update(),
             None => return init::setup(),
         },
         Some(Command::Hooks { ref hook_command }) => {
@@ -260,11 +267,14 @@ fn main() -> Result<()> {
     let config_path = match find_config() {
         Some(path) => path,
         None => {
-            if interactive {
-                return init::run();
+            if cli.task.is_empty() {
+                if interactive {
+                    return init::run();
+                }
+                print!("{}", format_help());
+                return Ok(());
             }
-            print!("{}", format_help());
-            return Ok(());
+            bail!("No plz.toml found. Run `plz init` to create one.");
         }
     };
     let config = config::load(&config_path)?;
