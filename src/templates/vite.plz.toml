@@ -1,5 +1,5 @@
 [template]
-description = "Vite + Vitest + ESLint + Prettier"
+description = "Basic vite tasks"
 env = "pnpm"
 
 [extends]

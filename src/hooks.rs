@@ -299,14 +299,26 @@ pub fn add_hook(config: &PlzConfig, config_path: &Path) -> Result<()> {
         return Ok(());
     }
 
-    let items: Vec<(&str, &str, &str)> = candidates
+    let mut ms_items: Vec<crate::utils::MultiSelectItem> = candidates
         .iter()
-        .map(|name| (name.as_str(), name.as_str(), ""))
+        .map(|name| crate::utils::MultiSelectItem {
+            label: name.clone(),
+            hint: String::new(),
+            selected: false,
+        })
         .collect();
 
-    let selected: Vec<&str> = cliclack::multiselect("Which tasks should run as a git hook?")
-        .items(&items)
-        .interact()?;
+    let selected: Vec<&str> = match crate::utils::multiselect(
+        "Which tasks should run as a git hook?",
+        &mut ms_items,
+        true,
+    )? {
+        Some(indices) => indices.iter().map(|&i| candidates[i].as_str()).collect(),
+        None => {
+            eprintln!("\x1b[2m✕  Cancelled\x1b[0m");
+            return Ok(());
+        }
+    };
 
     if selected.is_empty() {
         eprintln!("\x1b[2m✕  Cancelled\x1b[0m");

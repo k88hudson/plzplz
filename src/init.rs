@@ -210,18 +210,6 @@ pub fn run() -> Result<()> {
         .max()
         .unwrap_or(0);
 
-    let items: Vec<(&str, String, &str)> = sorted_templates
-        .iter()
-        .map(|t| {
-            let padding = " ".repeat(max_name_len - t.name.len() + 2);
-            (
-                t.name.as_str(),
-                format!("{}{padding}{}", t.name, t.description),
-                "",
-            )
-        })
-        .collect();
-
     // Pre-select: prefer detected env template, else fall back to env-agnostic templates
     let initial: Vec<&str> = sorted_templates
         .iter()
@@ -230,18 +218,29 @@ pub fn run() -> Result<()> {
         .map(|t| vec![t.name.as_str()])
         .unwrap_or_default();
 
-    let selected: Vec<&str> = match cliclack::multiselect("Which templates?")
-        .items(&items)
-        .initial_values(initial)
-        .required(false)
-        .interact()
-    {
-        Ok(s) => s,
-        Err(_) => {
-            print_templates_hint(&cfg_dir);
-            return Ok(());
-        }
-    };
+    let mut ms_items: Vec<crate::utils::MultiSelectItem> = sorted_templates
+        .iter()
+        .map(|t| {
+            let padding = " ".repeat(max_name_len - t.name.len() + 2);
+            crate::utils::MultiSelectItem {
+                label: format!("{}{padding}{}", t.name, t.description),
+                hint: String::new(),
+                selected: initial.contains(&t.name.as_str()),
+            }
+        })
+        .collect();
+
+    let selected: Vec<&str> =
+        match crate::utils::multiselect("Which templates?", &mut ms_items, false)? {
+            Some(indices) => indices
+                .iter()
+                .map(|&i| sorted_templates[i].name.as_str())
+                .collect(),
+            None => {
+                print_templates_hint(&cfg_dir);
+                return Ok(());
+            }
+        };
 
     let selected = if selected.is_empty() {
         vec!["general"]
@@ -650,32 +649,29 @@ fn setup_settings_editor(settings_path: &std::path::Path) -> Result<()> {
     }
 
     // Build multiselect with current values
-    let items: Vec<(&str, String, &str)> = settings::ALL_SETTINGS
-        .iter()
-        .map(|entry| {
-            (
-                entry.key,
-                format!("{} — {}", entry.key, entry.description),
-                "",
-            )
-        })
-        .collect();
-
     let currently_enabled: Vec<&str> = raw
         .iter()
         .filter(|(_, value, _)| *value)
         .map(|(key, _, _)| *key)
         .collect();
 
-    let selected: Vec<&str> = match cliclack::multiselect("Toggle settings")
-        .items(&items)
-        .initial_values(currently_enabled)
-        .required(false)
-        .interact()
-    {
-        Ok(s) => s,
-        Err(_) => return Ok(()),
-    };
+    let mut ms_items: Vec<crate::utils::MultiSelectItem> = settings::ALL_SETTINGS
+        .iter()
+        .map(|entry| crate::utils::MultiSelectItem {
+            label: format!("{} — {}", entry.key, entry.description),
+            hint: String::new(),
+            selected: currently_enabled.contains(&entry.key),
+        })
+        .collect();
+
+    let selected: Vec<&str> =
+        match crate::utils::multiselect("Toggle settings", &mut ms_items, false)? {
+            Some(indices) => indices
+                .iter()
+                .map(|&i| settings::ALL_SETTINGS[i].key)
+                .collect(),
+            None => return Ok(()),
+        };
 
     let values: Vec<(&str, bool)> = settings::ALL_SETTINGS
         .iter()

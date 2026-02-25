@@ -1,5 +1,5 @@
 [template]
-description = "Basic starter tasks"
+description = "Just a sample task"
 
 # Say hello
 [tasks.hello]
