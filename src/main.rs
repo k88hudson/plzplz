@@ -29,11 +29,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Manage global defaults for plz
+    /// Manage plz itself: init, add, hooks, schema, and more
     Plz {
         #[command(subcommand)]
         plz_command: Option<PlzCommand>,
     },
+}
+
+#[derive(Subcommand)]
+enum PlzCommand {
     /// Create a plz.toml
     Init,
     /// Add a new task to plz.toml
@@ -46,6 +50,12 @@ enum Command {
         #[command(subcommand)]
         hook_command: Option<HookCommand>,
     },
+    /// Print JSON Schema for plz.toml
+    Schema,
+    /// Browse and copy example task snippets
+    Example,
+    /// Update plz to the latest version
+    Update,
 }
 
 #[derive(Subcommand)]
@@ -64,16 +74,6 @@ enum HookCommand {
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
     },
-}
-
-#[derive(Subcommand)]
-enum PlzCommand {
-    /// Print JSON Schema for plz.toml
-    Schema,
-    /// Browse and copy example task snippets
-    Example,
-    /// Update plz to the latest version
-    Update,
 }
 
 fn is_nested() -> bool {
@@ -134,20 +134,20 @@ const HELP_COMMANDS: &[HelpEntry] = &[
         description: "Add a git hook to existing tasks",
     },
     HelpEntry {
-        usage: "plz",
-        description: "Manage global defaults",
-    },
-    HelpEntry {
-        usage: "plz schema",
+        usage: "schema",
         description: "Print JSON Schema for plz.toml",
     },
     HelpEntry {
-        usage: "plz example",
+        usage: "example",
         description: "Browse and copy example task snippets",
     },
     HelpEntry {
-        usage: "plz update",
+        usage: "update",
         description: "Update plz to the latest version",
+    },
+    HelpEntry {
+        usage: "plz",
+        description: "Manage global defaults",
     },
 ];
 
@@ -221,7 +221,7 @@ fn main() -> Result<()> {
     // (clap's help is disabled so subcommands keep their own help)
     {
         let args: Vec<String> = env::args().collect();
-        if args.len() == 2 && (args[1] == "--help" || args[1] == "-h") {
+        if args.len() == 2 && (args[1] == "--help" || args[1] == "-h" || args[1] == "help") {
             print!("{}", format_help());
             return Ok(());
         }
@@ -230,9 +230,9 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Command::Init) => return init::run(),
-        Some(Command::Add { name }) => return init::add_task(name),
         Some(Command::Plz { ref plz_command }) => match plz_command {
+            Some(PlzCommand::Init) => return init::run(),
+            Some(PlzCommand::Add { name }) => return init::add_task(name.clone()),
             Some(PlzCommand::Schema) => {
                 let schema = schemars::schema_for!(config::PlzConfig);
                 println!("{}", serde_json::to_string_pretty(&schema)?);
@@ -240,25 +240,26 @@ fn main() -> Result<()> {
             }
             Some(PlzCommand::Example) => return init::help_templates(),
             Some(PlzCommand::Update) => return init::self_update(),
-            None => return init::setup(),
-        },
-        Some(Command::Hooks { ref hook_command }) => {
-            let config_path = find_config().ok_or_else(|| anyhow::anyhow!("No plz.toml found"))?;
-            let config = config::load(&config_path)?;
-            let base_dir = config_path.parent().unwrap().to_path_buf();
-            let interactive = is_interactive(&cli);
-            match hook_command {
-                Some(HookCommand::Install) => return hooks::install(&config, &base_dir),
-                Some(HookCommand::Uninstall) => return hooks::uninstall(&config, &base_dir),
-                Some(HookCommand::Add) => return hooks::add_hook(&config, &config_path),
-                Some(HookCommand::Run { stage, .. }) => {
-                    return hooks::run_stage(&config, stage, &base_dir, interactive);
-                }
-                None => {
-                    return hooks::interactive_install(&config, &base_dir, interactive);
+            Some(PlzCommand::Hooks { hook_command }) => {
+                let config_path =
+                    find_config().ok_or_else(|| anyhow::anyhow!("No plz.toml found"))?;
+                let config = config::load(&config_path)?;
+                let base_dir = config_path.parent().unwrap().to_path_buf();
+                let interactive = is_interactive(&cli);
+                match hook_command {
+                    Some(HookCommand::Install) => return hooks::install(&config, &base_dir),
+                    Some(HookCommand::Uninstall) => return hooks::uninstall(&config, &base_dir),
+                    Some(HookCommand::Add) => return hooks::add_hook(&config, &config_path),
+                    Some(HookCommand::Run { stage, .. }) => {
+                        return hooks::run_stage(&config, stage, &base_dir, interactive);
+                    }
+                    None => {
+                        return hooks::interactive_install(&config, &base_dir, interactive);
+                    }
                 }
             }
-        }
+            None => return init::setup(),
+        },
         None => {}
     }
 
@@ -273,6 +274,9 @@ fn main() -> Result<()> {
                 }
                 print!("{}", format_help());
                 return Ok(());
+            }
+            if let Some(result) = try_plz_subcommand(&cli.task) {
+                return result;
             }
             bail!("No plz.toml found. Run `plz init` to create one.");
         }
@@ -353,9 +357,11 @@ fn main() -> Result<()> {
 
     let input = &cli.task[0];
 
-    if input == "add" && !config.tasks.contains_key("add") {
-        let name = cli.task.get(1).cloned();
-        return init::add_task(name);
+    // Fall through to built-in subcommands if no task matches
+    if !config.tasks.contains_key(input)
+        && let Some(result) = try_plz_subcommand(&cli.task)
+    {
+        return result;
     }
 
     let resolved = resolve_task(&config, input, &cli.task[1..], interactive)?;
@@ -384,6 +390,55 @@ fn main() -> Result<()> {
     hooks::hint_uninstalled_hooks(&config, &base_dir);
 
     Ok(())
+}
+
+fn try_plz_subcommand(task: &[String]) -> Option<Result<()>> {
+    let input = task.first()?.as_str();
+    match input {
+        "init" => Some(init::run()),
+        "add" => {
+            let name = task.get(1).cloned();
+            Some(init::add_task(name))
+        }
+        "schema" => {
+            let schema = schemars::schema_for!(config::PlzConfig);
+            Some(
+                serde_json::to_string_pretty(&schema)
+                    .map(|s| println!("{}", s))
+                    .map_err(Into::into),
+            )
+        }
+        "example" => Some(init::help_templates()),
+        "update" => Some(init::self_update()),
+        "help" => {
+            print!("{}", format_help());
+            Some(Ok(()))
+        }
+        "hooks" => {
+            let config_path = match find_config() {
+                Some(p) => p,
+                None => return Some(Err(anyhow::anyhow!("No plz.toml found"))),
+            };
+            let config = match config::load(&config_path) {
+                Ok(c) => c,
+                Err(e) => return Some(Err(e)),
+            };
+            let base_dir = config_path.parent().unwrap().to_path_buf();
+            let sub = task.get(1).map(|s| s.as_str());
+            match sub {
+                Some("install") => Some(hooks::install(&config, &base_dir)),
+                Some("uninstall") => Some(hooks::uninstall(&config, &base_dir)),
+                Some("add") => Some(hooks::add_hook(&config, &config_path)),
+                _ => {
+                    let interactive = !is_ci::cached()
+                        && std::io::stdin().is_terminal()
+                        && env::var_os("PLZ_COMMAND").is_none();
+                    Some(hooks::interactive_install(&config, &base_dir, interactive))
+                }
+            }
+        }
+        _ => None,
+    }
 }
 
 fn resolve_task(

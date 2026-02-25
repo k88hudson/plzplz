@@ -287,6 +287,10 @@ pub fn load(path: &Path) -> Result<PlzConfig> {
         }
     }
 
+    if config.tasks.contains_key("plz") {
+        bail!("\"plz\" is a reserved name and cannot be used as a task name.");
+    }
+
     // Validate git_hook values
     for (name, task) in &config.tasks {
         if let Some(ref hook) = task.git_hook {

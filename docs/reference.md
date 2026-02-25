@@ -2,21 +2,24 @@
 
 ## CLI Commands
 
-Tools that need to interoperate with plz should run `plz help` or `plz plz schema`
+Tools that need to interoperate with plz should run `plz help` or `plz schema`
 for the TOML schema.
 
 | Command                 | Description                                      |
 | ----------------------- | ------------------------------------------------ |
-| `plz init`              | Initialize plz.toml with auto-detected defaults  |
 | `plz [task]`            | Run a task (interactive picker if no task given) |
 | `plz [task] -- [args]`  | Run a task with extra arguments                  |
+| `plz init`              | Initialize plz.toml with auto-detected defaults  |
 | `plz add [task]`        | Add a task from built-in snippets                |
 | `plz hooks install`     | Install git hooks defined in plz.toml            |
 | `plz hooks uninstall`   | Remove plz-managed git hooks                     |
 | `plz hooks run <stage>` | Run all tasks for a git hook stage               |
+| `plz schema`            | Print JSON schema for plz.toml                   |
+| `plz example`           | Show example plz.toml snippets                   |
+| `plz update`            | Update plz to the latest version                 |
 | `plz plz`               | Set up user defaults in ~/.plz/                  |
-| `plz plz schema`        | Print JSON schema for plz.toml                   |
-| `plz plz example`       | Show example plz.toml snippets                   |
+
+> Built-in commands like `init`, `add`, and `hooks` are actually subcommands of `plz plz`. If you have a task with the same name as a built-in command, use `plz plz <command>` to run the built-in (e.g. `plz plz add`).
 
 ### Flags
 

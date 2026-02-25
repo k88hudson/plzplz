@@ -1718,8 +1718,9 @@ mod cli_tests {
             "init",
             "add",
             "hooks",
-            "plz schema",
-            "plz example",
+            "schema",
+            "example",
+            "update",
             "--no-interactive",
         ] {
             assert!(
