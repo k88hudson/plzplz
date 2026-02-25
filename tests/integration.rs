@@ -1084,7 +1084,7 @@ mod init_tests {
     fn template_has_metadata() {
         let all = templates::load_templates(None);
         let rust = all.iter().find(|t| t.name == "rust").unwrap();
-        assert_eq!(rust.env, "rust");
+        assert_eq!(rust.env.as_deref(), Some("rust"));
         assert!(!rust.description.is_empty());
     }
 
@@ -1222,7 +1222,8 @@ run_serial = ["cargo fmt", "cargo clippy --fix --allow-dirty"]
     #[test]
     fn user_template_listed_before_embedded_for_same_env() {
         let dir = TempDir::new().unwrap();
-        let user_template = dir.path().join("user.plz.toml");
+        fs::create_dir_all(dir.path().join("templates")).unwrap();
+        let user_template = dir.path().join("templates").join("user.plz.toml");
         fs::write(
             &user_template,
             r#"[template]
@@ -1250,7 +1251,8 @@ run = "cargo build --release"
     #[test]
     fn user_template_appended_when_env_not_in_embedded() {
         let dir = TempDir::new().unwrap();
-        let user_template = dir.path().join("user.plz.toml");
+        fs::create_dir_all(dir.path().join("templates")).unwrap();
+        let user_template = dir.path().join("templates").join("user.plz.toml");
         fs::write(
             &user_template,
             r#"[template]
@@ -1266,7 +1268,7 @@ run = "echo hello"
         let all = templates::load_templates(Some(dir.path()));
         let last = all.last().unwrap();
         assert_eq!(last.name, "user");
-        assert_eq!(last.env, "custom");
+        assert_eq!(last.env.as_deref(), Some("custom"));
         assert!(last.is_user);
     }
 

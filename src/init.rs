@@ -169,26 +169,29 @@ pub fn run() -> Result<()> {
 
     // Sort templates: detected envs first (user templates before embedded), then alternatives, then others
     let mut sorted_templates: Vec<&TemplateMeta> = Vec::new();
+    let env_detected = |t: &TemplateMeta| t.env.as_ref().is_some_and(|e| detected.contains(e));
+    let env_alternative =
+        |t: &TemplateMeta| t.env.as_ref().is_some_and(|e| alternative_envs.contains(e));
     // Detected first — user templates before embedded for the same env
     for t in &all_templates {
-        if detected.contains(&t.env) && t.is_user {
+        if env_detected(t) && t.is_user {
             sorted_templates.push(t);
         }
     }
     for t in &all_templates {
-        if detected.contains(&t.env) && !t.is_user {
+        if env_detected(t) && !t.is_user {
             sorted_templates.push(t);
         }
     }
     // Alternatives (detected but superseded)
     for t in &all_templates {
-        if alternative_envs.contains(&t.env) && !detected.contains(&t.env) {
+        if env_alternative(t) && !env_detected(t) {
             sorted_templates.push(t);
         }
     }
     // Everything else
     for t in &all_templates {
-        if !detected.contains(&t.env) && !alternative_envs.contains(&t.env) {
+        if !env_detected(t) && !env_alternative(t) {
             sorted_templates.push(t);
         }
     }
@@ -219,10 +222,11 @@ pub fn run() -> Result<()> {
         })
         .collect();
 
-    // Pre-select only one template: prefer user template for a detected env, else first detected
+    // Pre-select: prefer detected env template, else fall back to env-agnostic templates
     let initial: Vec<&str> = sorted_templates
         .iter()
-        .find(|t| detected.contains(&t.env) && !alternative_envs.contains(&t.env))
+        .find(|t| env_detected(t) && !env_alternative(t))
+        .or_else(|| sorted_templates.iter().find(|t| t.env.is_none()))
         .map(|t| vec![t.name.as_str()])
         .unwrap_or_default();
 
@@ -239,11 +243,11 @@ pub fn run() -> Result<()> {
         }
     };
 
-    if selected.is_empty() {
-        cliclack::outro("No templates selected, skipping plz.toml creation")?;
-        print_templates_hint(&cfg_dir);
-        return Ok(());
-    }
+    let selected = if selected.is_empty() {
+        vec!["general"]
+    } else {
+        selected
+    };
 
     // Build output from selected templates
     let mut output = String::new();
@@ -259,7 +263,12 @@ pub fn run() -> Result<()> {
 
         if use_taskgroups {
             if let Some((_, tasks)) = parse_default(&content) {
-                let grouped = convert_to_taskgroup(&content, template_name, &tasks, &template.env);
+                let grouped = convert_to_taskgroup(
+                    &content,
+                    template_name,
+                    &tasks,
+                    template.env.as_deref().unwrap_or(""),
+                );
                 write!(output, "{}", grouped.trim())?;
             } else {
                 write!(output, "{}", content.trim())?;
@@ -528,7 +537,7 @@ pub fn setup() -> Result<()> {
         config_dir().ok_or_else(|| anyhow::anyhow!("Could not determine config directory"))?;
 
     let templates_dir = plz_dir.join("templates");
-    let user_template_path = plz_dir.join("user.plz.toml");
+    let user_template_path = templates_dir.join("user.plz.toml");
     let settings_path = plz_dir.join("settings.toml");
 
     let perm_hint = format!(
@@ -551,18 +560,16 @@ pub fn setup() -> Result<()> {
         return setup_settings_editor(&settings_path);
     }
 
-    cliclack::intro("plz setup")?;
-
     if !check_dir_writable(&plz_dir) {
-        cliclack::outro(format!(
+        cliclack::log::error(format!(
             "Cannot create {} (parent directory is not writable). {perm_hint}",
             plz_dir.display(),
         ))?;
         return Ok(());
     }
 
-    if let Err(e) = std::fs::create_dir_all(&plz_dir) {
-        cliclack::outro(format!("Could not create {}: {e}", plz_dir.display()))?;
+    if let Err(e) = std::fs::create_dir_all(&templates_dir) {
+        cliclack::log::error(format!("Could not create {}: {e}", templates_dir.display()))?;
         return Ok(());
     }
 
@@ -575,41 +582,19 @@ pub fn setup() -> Result<()> {
 # [tasks.example]
 # run = "echo hello"
 "#;
-        match std::fs::write(&user_template_path, content) {
-            Ok(()) => {
-                cliclack::log::step(format!(
-                    "Added example template: {}",
-                    user_template_path.display()
-                ))?;
-            }
-            Err(e) => {
-                cliclack::log::warning(format!("Could not create user template: {e}"))?;
-            }
-        }
+        let _ = std::fs::write(&user_template_path, content);
     }
 
     if !settings_path.exists() {
         let content = "# show_hints = true\n";
-        match std::fs::write(&settings_path, content) {
-            Ok(()) => {
-                cliclack::log::step(format!("Added settings: {}", settings_path.display()))?;
-            }
-            Err(e) => {
-                cliclack::log::warning(format!("Could not create settings: {e}"))?;
-            }
-        }
+        let _ = std::fs::write(&settings_path, content);
     }
 
-    if !templates_dir.exists() {
-        if let Err(e) = std::fs::create_dir_all(&templates_dir) {
-            cliclack::log::warning(format!("Could not create {}: {e}", templates_dir.display()))?;
-        }
-    }
-
-    cliclack::outro(format!(
-        "Add files to {} to customize templates for plz init",
+    eprintln!("🙏 Created {}", plz_dir.display());
+    eprintln!(
+        "\x1b[2m   Add templates to {} to customize plz init\x1b[0m",
         templates_dir.display()
-    ))?;
+    );
 
     Ok(())
 }

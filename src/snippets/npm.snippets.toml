@@ -1,0 +1,18 @@
+
+[[snippets]]
+name = "vite (npm)"
+description = "Run vite dev server"
+content = """
+[tasks.dev]
+env = "npm"
+run = "vite"
+"""
+
+[[snippets]]
+name = "vitest (npm)"
+description = "Run tests with vitest"
+content = """
+[tasks.test]
+env = "npm"
+run = "vitest run"
+"""

@@ -21,4 +21,4 @@ targets = [
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
-install-success-msg = "Success! Run `plz` in any project directory to get started"
+install-success-msg = "Success! Run plz init in any project directory to get started"

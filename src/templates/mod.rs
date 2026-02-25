@@ -5,6 +5,7 @@ use toml_edit::de::from_str;
 
 // Embedded template files (name, content)
 pub const EMBEDDED_TEMPLATES: &[(&str, &str)] = &[
+    ("general", include_str!("./general.plz.toml")),
     ("pnpm", include_str!("./pnpm.plz.toml")),
     ("npm", include_str!("./npm.plz.toml")),
     ("uv", include_str!("./uv.plz.toml")),
@@ -14,11 +15,11 @@ pub const EMBEDDED_TEMPLATES: &[(&str, &str)] = &[
 pub const EMBEDDED_ENVIRONMENTS: &str = include_str!("../environments.toml");
 
 pub const EMBEDDED_SNIPPETS: &[(&str, &str)] = &[
-    ("general", include_str!("../snippets/general.toml")),
-    ("rust", include_str!("../snippets/rust.toml")),
-    ("pnpm", include_str!("../snippets/pnpm.toml")),
-    ("npm", include_str!("../snippets/npm.toml")),
-    ("uv", include_str!("../snippets/uv.toml")),
+    ("general", include_str!("../snippets/general.snippets.toml")),
+    ("rust", include_str!("../snippets/rust.snippets.toml")),
+    ("pnpm", include_str!("../snippets/pnpm.snippets.toml")),
+    ("npm", include_str!("../snippets/npm.snippets.toml")),
+    ("uv", include_str!("../snippets/uv.snippets.toml")),
 ];
 
 #[derive(Debug, Clone, Deserialize)]
@@ -32,7 +33,7 @@ pub struct Environment {
 pub struct TemplateMeta {
     pub name: String,
     pub description: String,
-    pub env: String,
+    pub env: Option<String>,
     pub content: String,
     pub is_user: bool,
 }
@@ -40,7 +41,8 @@ pub struct TemplateMeta {
 #[derive(Debug, Clone, Deserialize)]
 struct TemplateHeader {
     description: String,
-    env: String,
+    #[serde(default)]
+    env: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -84,7 +86,7 @@ pub fn load_templates(config_dir: Option<&Path>) -> Vec<TemplateMeta> {
     // Load user template first so it can be prioritized for its env
     let mut user_template: Option<TemplateMeta> = None;
     if let Some(dir) = config_dir {
-        let user_path = dir.join("user.plz.toml");
+        let user_path = dir.join("templates").join("user.plz.toml");
         if let Ok(content) = std::fs::read_to_string(&user_path)
             && let Some(meta) = parse_template_meta("user", &content, true)
         {
@@ -95,7 +97,7 @@ pub fn load_templates(config_dir: Option<&Path>) -> Vec<TemplateMeta> {
     for (name, content) in EMBEDDED_TEMPLATES {
         // If user template matches this env, insert user template before it
         if let Some(ref ut) = user_template
-            && ut.env == *name
+            && ut.env.as_deref() == Some(*name)
         {
             templates.push(ut.clone());
         }
@@ -106,7 +108,9 @@ pub fn load_templates(config_dir: Option<&Path>) -> Vec<TemplateMeta> {
 
     // If user template env doesn't match any embedded template, append it
     if let Some(ref ut) = user_template
-        && !EMBEDDED_TEMPLATES.iter().any(|(name, _)| *name == ut.env)
+        && !EMBEDDED_TEMPLATES
+            .iter()
+            .any(|(name, _)| ut.env.as_deref() == Some(*name))
     {
         templates.push(ut.clone());
     }

@@ -1,13 +1,4 @@
 [[snippets]]
-name = "uv task"
-description = "Task using uv run"
-content = """
-[tasks.test]
-env = "uv"
-run = "pytest"
-"""
-
-[[snippets]]
 name = "uv lint"
 description = "Run ruff check"
 content = """
