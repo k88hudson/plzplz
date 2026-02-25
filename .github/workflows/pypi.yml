@@ -39,7 +39,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist
+          args: --release --out dist --features ring
       - uses: actions/upload-artifact@v6
         with:
           name: wheels-${{ matrix.target }}
