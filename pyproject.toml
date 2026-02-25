@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "plzplz"
 description = "A simple cross-platform task runner with helpful defaults"
 license = "MIT"
-requires-python = ">=3.8"
+requires-python = ">=3.12"
 dynamic = ["version"]
 
 [project.urls]
