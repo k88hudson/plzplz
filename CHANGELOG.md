@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.6](https://github.com/k88hudson/plzplz/compare/v0.0.5...v0.0.6) - 2026-02-25
+
+### Added
+
+- add hooks add
+
+### Fixed
+
+- installer should install to ~/.local/bin
+- plz [task] behavior in a non plz dir
+
+### Other
+
+- add uvx as an environemnt and remove n[m
+- rename snippets files
+- fix typo in install link
+- add vitepress site
+
 ## [0.0.5](https://github.com/k88hudson/plzplz/compare/v0.0.4...v0.0.5) - 2026-02-24
 
 ### Added
