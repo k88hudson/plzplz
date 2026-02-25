@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.7](https://github.com/k88hudson/plzplz/compare/v0.0.6...v0.0.7) - 2026-02-25
+
+### Added
+
+- add plz cheatsheet feature to replace example
+
+### Fixed
+
+- added conflict resolution for all the built-in commands
+
 ## [0.0.6](https://github.com/k88hudson/plzplz/compare/v0.0.5...v0.0.6) - 2026-02-25
 
 ### Added
