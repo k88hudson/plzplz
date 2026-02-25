@@ -1,9 +1,10 @@
-use crate::config::PlzConfig;
+use crate::config::{self, PlzConfig};
 use crate::settings;
 use anyhow::{Result, bail};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use toml_edit::DocumentMut;
 
 const MANAGED_MARKER: &str = "# plz:managed - do not edit";
 const HOOKS_VERSION: u32 = 2;
@@ -267,7 +268,114 @@ pub fn interactive_install(config: &PlzConfig, base_dir: &Path, interactive: boo
     Ok(())
 }
 
-/// Variant that auto-discovers config from cwd (for `plz plz`).
+/// Interactive flow: pick tasks, pick a stage, write git_hook into plz.toml.
+pub fn add_hook(config: &PlzConfig, config_path: &Path) -> Result<()> {
+    // Collect tasks without a git_hook: (label, is_group_task)
+    let mut candidates: Vec<String> = Vec::new();
+    let mut task_names: Vec<&String> = config.tasks.keys().collect();
+    task_names.sort();
+    for name in task_names {
+        if config.tasks[name].git_hook.is_none() {
+            candidates.push(name.clone());
+        }
+    }
+    if let Some(ref groups) = config.taskgroup {
+        let mut group_names: Vec<&String> = groups.keys().collect();
+        group_names.sort();
+        for gname in group_names {
+            let group = &groups[gname];
+            let mut gtask_names: Vec<&String> = group.tasks.keys().collect();
+            gtask_names.sort();
+            for tname in gtask_names {
+                if group.tasks[tname].git_hook.is_none() {
+                    candidates.push(format!("{gname}:{tname}"));
+                }
+            }
+        }
+    }
+
+    if candidates.is_empty() {
+        eprintln!("All tasks already have a git_hook configured.");
+        return Ok(());
+    }
+
+    let items: Vec<(&str, &str, &str)> = candidates
+        .iter()
+        .map(|name| (name.as_str(), name.as_str(), ""))
+        .collect();
+
+    let selected: Vec<&str> = cliclack::multiselect("Which tasks should run as a git hook?")
+        .items(&items)
+        .interact()?;
+
+    if selected.is_empty() {
+        eprintln!("\x1b[2m✕  Cancelled\x1b[0m");
+        return Ok(());
+    }
+
+    // Pick a stage
+    let common_stages = &[
+        "pre-commit",
+        "commit-msg",
+        "pre-push",
+        "prepare-commit-msg",
+        "post-commit",
+        "post-merge",
+        "post-checkout",
+        "pre-rebase",
+    ];
+    let stage_items: Vec<(&str, &str, &str)> = common_stages.iter().map(|s| (*s, *s, "")).collect();
+
+    let stage: &str = cliclack::select("Which git hook stage?")
+        .items(&stage_items)
+        .initial_value("pre-commit")
+        .interact()?;
+
+    // Read and edit the TOML document in-place
+    let content = fs::read_to_string(config_path)?;
+    let mut doc: DocumentMut = content.parse()?;
+
+    for name in &selected {
+        if let Some((group, task)) = name.split_once(':') {
+            // Group task: [taskgroup.GROUP.TASK]
+            if let Some(taskgroup) = doc.get_mut("taskgroup")
+                && let Some(group_table) = taskgroup.get_mut(group)
+                && let Some(task_table) = group_table.get_mut(task)
+                && let Some(t) = task_table.as_table_like_mut()
+            {
+                t.insert("git_hook", toml_edit::value(stage));
+            }
+        } else {
+            // Top-level task: [tasks.NAME]
+            if let Some(tasks) = doc.get_mut("tasks")
+                && let Some(task_table) = tasks.get_mut(*name)
+                && let Some(t) = task_table.as_table_like_mut()
+            {
+                t.insert("git_hook", toml_edit::value(stage));
+            }
+        }
+    }
+
+    fs::write(config_path, doc.to_string())?;
+
+    for name in &selected {
+        eprintln!("\x1b[32m✓\x1b[0m Added {stage} hook to \x1b[1m{name}\x1b[0m");
+    }
+
+    // Offer to install hooks
+    let base_dir = config_path.parent().unwrap().to_path_buf();
+    let updated_config = config::load(config_path)?;
+    if has_uninstalled_hooks(&updated_config, &base_dir) {
+        let should_install: bool = cliclack::confirm("Install hooks now?")
+            .initial_value(true)
+            .interact()?;
+        if should_install {
+            install(&updated_config, &base_dir)?;
+        }
+    }
+
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

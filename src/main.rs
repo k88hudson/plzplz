@@ -54,6 +54,8 @@ enum HookCommand {
     Install,
     /// Uninstall plz-managed git hooks
     Uninstall,
+    /// Add a git hook stage to existing tasks
+    Add,
     /// Run all tasks for a git hook stage (called by hook scripts)
     Run {
         /// The git hook stage to run (e.g. pre-commit)
@@ -124,6 +126,10 @@ const HELP_COMMANDS: &[HelpEntry] = &[
     HelpEntry {
         usage: "hooks",
         description: "Install or manage git hooks",
+    },
+    HelpEntry {
+        usage: "hooks add",
+        description: "Add a git hook to existing tasks",
     },
     HelpEntry {
         usage: "plz",
@@ -237,6 +243,7 @@ fn main() -> Result<()> {
             match hook_command {
                 Some(HookCommand::Install) => return hooks::install(&config, &base_dir),
                 Some(HookCommand::Uninstall) => return hooks::uninstall(&config, &base_dir),
+                Some(HookCommand::Add) => return hooks::add_hook(&config, &config_path),
                 Some(HookCommand::Run { stage, .. }) => {
                     return hooks::run_stage(&config, stage, &base_dir, interactive);
                 }
