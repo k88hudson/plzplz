@@ -18,7 +18,7 @@ targets = [
   "x86_64-pc-windows-msvc",
 ]
 # Path that installers should place binaries in
-install-path = "CARGO_HOME"
+install-path = "~/.local/bin"
 # Whether to install an updater program
 install-updater = false
 install-success-msg = "Success! Run plz init in any project directory to get started"
