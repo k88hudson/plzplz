@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8](https://github.com/k88hudson/plzplz/compare/v0.0.7...v0.0.8) - 2026-02-25
+
+### Other
+
+- Publish pypi on tags
+- update python min version
+
 ## [0.0.7](https://github.com/k88hudson/plzplz/compare/v0.0.6...v0.0.7) - 2026-02-25
 
 ### Added
