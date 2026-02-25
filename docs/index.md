@@ -17,12 +17,12 @@ hero:
 
 ::: code-group
 
-```cargo
-cargo install plzplz
-```
-
 ```uv
 uv tool install plzplz
+```
+
+```cargo
+cargo install plzplz
 ```
 
 ```bash [macOS / Linux]
