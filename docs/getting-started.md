@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://pzplz.org/install.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://plzplz.org/install.sh | sh
 ```
 
 You can also install with `cargo install plzplz` or `uv tool install plzplz`.

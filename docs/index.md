@@ -16,7 +16,7 @@ hero:
 ## Install
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://pzplz.org/install.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://plzplz.org/install.sh | sh
 ```
 
 ## Quick Example
