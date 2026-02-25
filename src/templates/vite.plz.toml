@@ -1,0 +1,18 @@
+[template]
+description = "Vite + Vitest + ESLint + Prettier"
+env = "pnpm"
+
+[extends]
+env = "pnpm"
+
+# Start development server
+[tasks.dev]
+run = "vite"
+
+# Build for production
+[tasks.build]
+run = "vite build"
+
+# Preview production build
+[tasks.preview]
+run = "vite preview"

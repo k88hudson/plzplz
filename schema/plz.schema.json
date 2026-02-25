@@ -45,7 +45,7 @@
           "default": null
         },
         "env": {
-          "description": "Tool environment wrapper applied to all tasks: \"pnpm\", \"npm\", or \"uv\"",
+          "description": "Tool environment wrapper applied to all tasks: \"pnpm\", \"npm\", \"uv\", or \"uvx\"",
           "type": [
             "string",
             "null"
@@ -74,7 +74,7 @@
           "default": null
         },
         "env": {
-          "description": "Tool environment wrapper: \"pnpm\" (uses `pnpm exec`), \"npm\" (uses `npx`), or \"uv\" (uses `uv run`)",
+          "description": "Tool environment wrapper: \"pnpm\" (uses `pnpm exec`), \"npm\" (uses `npx`), \"uv\" (uses `uv run`), or \"uvx\" (uses `uvx`)",
           "type": [
             "string",
             "null"

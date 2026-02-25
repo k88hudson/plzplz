@@ -1075,8 +1075,8 @@ mod init_tests {
         let all = templates::load_templates(None);
         let names: Vec<&str> = all.iter().map(|t| t.name.as_str()).collect();
         assert!(names.contains(&"rust"));
-        assert!(names.contains(&"pnpm"));
-        assert!(names.contains(&"npm"));
+        assert!(names.contains(&"vite"));
+        assert!(names.contains(&"vite-npm"));
         assert!(names.contains(&"uv"));
     }
 

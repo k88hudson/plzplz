@@ -6,8 +6,7 @@ use toml_edit::de::from_str;
 // Embedded template files (name, content)
 pub const EMBEDDED_TEMPLATES: &[(&str, &str)] = &[
     ("general", include_str!("./general.plz.toml")),
-    ("pnpm", include_str!("./pnpm.plz.toml")),
-    ("npm", include_str!("./npm.plz.toml")),
+    ("vite", include_str!("./vite.plz.toml")),
     ("uv", include_str!("./uv.plz.toml")),
     ("rust", include_str!("./rust.plz.toml")),
 ];
@@ -18,7 +17,6 @@ pub const EMBEDDED_SNIPPETS: &[(&str, &str)] = &[
     ("general", include_str!("../snippets/general.snippets.toml")),
     ("rust", include_str!("../snippets/rust.snippets.toml")),
     ("pnpm", include_str!("../snippets/pnpm.snippets.toml")),
-    ("npm", include_str!("../snippets/npm.snippets.toml")),
     ("uv", include_str!("../snippets/uv.snippets.toml")),
 ];
 
@@ -106,6 +104,18 @@ pub fn load_templates(config_dir: Option<&Path>) -> Vec<TemplateMeta> {
         }
     }
 
+    // Derive npm variant from the vite template
+    if let Some(vite) = templates.iter().find(|t| t.name == "vite") {
+        let npm_variant = TemplateMeta {
+            name: "vite-npm".to_string(),
+            description: vite.description.clone(),
+            env: Some("npm".to_string()),
+            content: vite.content.replace("env = \"pnpm\"", "env = \"npm\""),
+            is_user: false,
+        };
+        templates.push(npm_variant);
+    }
+
     // If user template env doesn't match any embedded template, append it
     if let Some(ref ut) = user_template
         && !EMBEDDED_TEMPLATES
@@ -167,6 +177,19 @@ pub fn load_snippets() -> Vec<(String, Vec<Snippet>)> {
         if let Ok(file) = from_str::<SnippetFile>(content) {
             all_snippets.push((name.to_string(), file.snippets));
         }
+    }
+
+    // Derive npm snippets from pnpm
+    if let Some((_, pnpm_snippets)) = all_snippets.iter().find(|(n, _)| n == "pnpm") {
+        let npm_snippets: Vec<Snippet> = pnpm_snippets
+            .iter()
+            .map(|s| Snippet {
+                name: s.name.clone(),
+                description: s.description.clone(),
+                content: s.content.replace("env = \"pnpm\"", "env = \"npm\""),
+            })
+            .collect();
+        all_snippets.push(("npm".to_string(), npm_snippets));
     }
 
     all_snippets

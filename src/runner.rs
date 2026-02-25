@@ -125,9 +125,16 @@ fn run_task_core(
 
     let wrap = |cmd: &str| -> String {
         match task.tool_env.as_deref() {
-            Some("uv") => format!("uv run {cmd}"),
-            Some("pnpm") => format!("pnpm exec {cmd}"),
-            Some("npm") => format!("npx {cmd}"),
+            Some("uv") if !cmd.starts_with("uv ") && !cmd.starts_with("uvx ") => {
+                format!("uv run {cmd}")
+            }
+            Some("uvx") if !cmd.starts_with("uvx ") => format!("uvx {cmd}"),
+            Some("pnpm") if !cmd.starts_with("pnpm ") && !cmd.starts_with("npx ") => {
+                format!("pnpm exec {cmd}")
+            }
+            Some("npm") if !cmd.starts_with("npx ") && !cmd.starts_with("npm ") => {
+                format!("npx {cmd}")
+            }
             _ => cmd.to_string(),
         }
     };
@@ -416,9 +423,16 @@ fn handle_fail_hook(
 ) -> Result<bool> {
     let wrap = |cmd: &str| -> String {
         match tool_env {
-            Some("uv") => format!("uv run {cmd}"),
-            Some("pnpm") => format!("pnpm exec {cmd}"),
-            Some("npm") => format!("npx {cmd}"),
+            Some("uv") if !cmd.starts_with("uv ") && !cmd.starts_with("uvx ") => {
+                format!("uv run {cmd}")
+            }
+            Some("uvx") if !cmd.starts_with("uvx ") => format!("uvx {cmd}"),
+            Some("pnpm") if !cmd.starts_with("pnpm ") && !cmd.starts_with("npx ") => {
+                format!("pnpm exec {cmd}")
+            }
+            Some("npm") if !cmd.starts_with("npx ") && !cmd.starts_with("npm ") => {
+                format!("npx {cmd}")
+            }
             _ => cmd.to_string(),
         }
     };

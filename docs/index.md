@@ -15,9 +15,21 @@ hero:
 
 ## Install
 
-```bash
+::: code-group
+
+```cargo
+cargo install plzplz
+```
+
+```uv
+uv tool install plzplz
+```
+
+```bash [macOS / Linux]
 curl --proto '=https' --tlsv1.2 -LsSf https://plzplz.org/install.sh | sh
 ```
+
+:::
 
 ## Quick Example
 
@@ -42,5 +54,5 @@ plz format
 - **Failure hooks** — suggest commands, show messages, or run scripts on failure
 - **Task groups** — organize related tasks with `[taskgroup.X]` namespaces
 - **Git hooks** — configure hooks directly in plz.toml
-- **Environment wrappers** — run commands through pnpm, npm, or uv with `tool_env`
+- **Environment wrappers** — run commands through pnpm, npm, uv, or uvx with `tool_env`
 - **Interactive selection** — fuzzy-find tasks when you forget the name

@@ -2,11 +2,23 @@
 
 ## Installation
 
+Running this command will install `plz` to `~/.local/bin`:
+
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf https://plzplz.org/install.sh | sh
 ```
 
-You can also install with `cargo install plzplz` or `uv tool install plzplz`.
+You can also install with `cargo`:
+
+```bash
+cargo install plzplz
+```
+
+or `uv`:
+
+```bash
+uv tool install plzplz
+```
 
 ## Initialize a project
 

@@ -4,8 +4,7 @@ env = "uv"
 
 # Run tests
 [tasks.test]
-run = "pytest"
-env = "uv"
+run = "uvx pytest"
 
 # Build package
 [tasks.build]
@@ -13,10 +12,8 @@ run = "uv build"
 
 # Format source files
 [tasks.format]
-run = "ruff format ."
-env = "uv"
+run = "uvx ruff format ."
 
 # Run linter
 [tasks.lint]
-run = "ruff check ."
-env = "uv"
+run = "uvx ruff check ."

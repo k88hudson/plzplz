@@ -98,7 +98,7 @@ run = "vitest"
 tool_env = "pnpm"
 ```
 
-Supported values: `pnpm` (uses `pnpm exec`), `npm` (uses `npx`), `uv` (uses `uv run`).
+Supported values: `pnpm` (uses `pnpm exec`), `npm` (uses `npx`), `uv` (uses `uv run`), `uvx` (uses `uvx`).
 
 ### Failure hooks
 

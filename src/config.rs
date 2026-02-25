@@ -32,7 +32,7 @@ pub const VALID_GIT_HOOKS: &[&str] = &[
 
 #[derive(Debug, Default, Clone, Deserialize, JsonSchema)]
 pub struct GlobalSettings {
-    /// Tool environment wrapper applied to all tasks: "pnpm", "npm", or "uv"
+    /// Tool environment wrapper applied to all tasks: "pnpm", "npm", "uv", or "uvx"
     #[serde(default, rename = "env")]
     #[schemars(rename = "env")]
     pub tool_env: Option<String>,
@@ -125,7 +125,7 @@ pub struct Task {
     /// Multiple commands to run concurrently
     #[serde(default)]
     pub run_parallel: Option<Vec<String>>,
-    /// Tool environment wrapper: "pnpm" (uses `pnpm exec`), "npm" (uses `npx`), or "uv" (uses `uv run`)
+    /// Tool environment wrapper: "pnpm" (uses `pnpm exec`), "npm" (uses `npx`), "uv" (uses `uv run`), or "uvx" (uses `uvx`)
     #[serde(default, rename = "env")]
     #[schemars(rename = "env")]
     pub tool_env: Option<String>,
