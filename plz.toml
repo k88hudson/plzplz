@@ -36,3 +36,11 @@ git_hook = "pre-commit"
 # Install locally
 [tasks.install]
 run_serial = ["cargo install --path . --force", "plz hooks install"]
+
+# Docs: start dev server
+[taskgroup.docs.dev]
+run = "pnpm docs:dev"
+
+# Docs: build for production
+[taskgroup.docs.build]
+run = "pnpm docs:build"
