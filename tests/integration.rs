@@ -1719,7 +1719,7 @@ mod cli_tests {
             "add",
             "hooks",
             "schema",
-            "example",
+            "cheatsheet",
             "update",
             "--no-interactive",
         ] {

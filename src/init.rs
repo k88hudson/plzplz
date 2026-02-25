@@ -5,7 +5,7 @@ use crate::templates::{self, Snippet, TemplateMeta};
 use anyhow::{Result, bail};
 use std::env;
 use std::fmt::Write as _;
-use std::io::{IsTerminal, Write};
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use toml_edit::DocumentMut;
 
@@ -385,25 +385,81 @@ fn pick_snippet(
     }
 }
 
-pub fn help_templates() -> Result<()> {
-    let cwd = env::current_dir()?;
-    let environments = templates::load_environments();
-    let detected = templates::detect_environments(&cwd, &environments);
-    let all_snippets = templates::load_snippets();
+pub fn print_cheatsheet() -> Result<()> {
+    let bold = "\x1b[1m";
+    let dim = "\x1b[2m";
+    let cyan = "\x1b[36m";
+    let reset = "\x1b[0m";
 
-    match pick_snippet(&all_snippets, &detected, "Enter to copy · Esc to cancel")? {
-        Some(snippet) => {
-            if copy_to_clipboard(snippet.content.trim()) {
-                println!("\x1b[32m✓\x1b[0m  Copied to clipboard!");
-            } else {
-                println!("Copy the snippet above into your plz.toml");
-            }
-        }
-        None => {
-            println!("\x1b[2m✕  Cancelled\x1b[0m");
-        }
-    }
+    let mut out = String::new();
 
+    out.push_str(&format!("{bold}plz.toml cheatsheet{reset}\n\n"));
+
+    out.push_str(&format!("{cyan}Basic task{reset}\n"));
+    out.push_str("[tasks.build]\n");
+    out.push_str("run = \"cargo build\"\n\n");
+
+    out.push_str(&format!("{cyan}Description (comment){reset}\n"));
+    out.push_str(&format!("{dim}# Build the project{reset}\n"));
+    out.push_str("[tasks.build]\n");
+    out.push_str("run = \"cargo build\"\n\n");
+
+    out.push_str(&format!("{cyan}Description (explicit){reset}\n"));
+    out.push_str("[tasks.build]\n");
+    out.push_str("run = \"cargo build\"\n");
+    out.push_str("description = \"Build the project\"\n\n");
+
+    out.push_str(&format!("{cyan}Serial execution{reset}\n"));
+    out.push_str("[tasks.fix]\n");
+    out.push_str("run_serial = [\"cargo fmt\", \"cargo clippy --fix --allow-dirty\"]\n\n");
+
+    out.push_str(&format!("{cyan}Parallel execution{reset}\n"));
+    out.push_str("[tasks.check]\n");
+    out.push_str("run_parallel = [\"plz lint\", \"plz format\"]\n\n");
+
+    out.push_str(&format!("{cyan}Task references{reset}\n"));
+    out.push_str("[tasks.check]\n");
+    out.push_str("run_parallel = [\"plz:lint\", \"plz:format\"]\n\n");
+
+    out.push_str(&format!("{cyan}Working directory{reset}\n"));
+    out.push_str("[tasks.frontend]\n");
+    out.push_str("dir = \"packages/web\"\n");
+    out.push_str("run = \"pnpm dev\"\n\n");
+
+    out.push_str(&format!(
+        "{cyan}Environment wrappers{reset}  {dim}pnpm | npm | uv | uvx{reset}\n"
+    ));
+    out.push_str("[tasks.vitest]\n");
+    out.push_str("run = \"vitest\"\n");
+    out.push_str("tool_env = \"pnpm\"\n\n");
+
+    out.push_str(&format!("{cyan}Failure hooks{reset}\n"));
+    out.push_str(&format!("{dim}# suggest a fix command{reset}\n"));
+    out.push_str("fail_hook = { suggest_command = \"cargo fmt\" }\n");
+    out.push_str(&format!("{dim}# show a message{reset}\n"));
+    out.push_str("fail_hook = { message = \"Check the logs\" }\n");
+    out.push_str(&format!("{dim}# run a command{reset}\n"));
+    out.push_str("fail_hook = \"notify-send 'Tests failed'\"\n\n");
+
+    out.push_str(&format!(
+        "{cyan}Git hooks{reset}  {dim}pre-commit | pre-push | commit-msg | post-commit | post-merge | post-checkout{reset}\n"
+    ));
+    out.push_str("[tasks.check]\n");
+    out.push_str("run_parallel = [\"plz:lint\", \"plz:format\"]\n");
+    out.push_str("git_hook = \"pre-commit\"\n\n");
+
+    out.push_str(&format!("{cyan}Extends (global defaults){reset}\n"));
+    out.push_str("[extends]\n");
+    out.push_str("env = { NODE_ENV = \"production\" }\n");
+    out.push_str("dir = \"packages/app\"\n\n");
+
+    out.push_str(&format!("{cyan}Task groups{reset}\n"));
+    out.push_str("[taskgroup.docs.build]\n");
+    out.push_str("run = \"pnpm docs:build\"\n\n");
+    out.push_str("[taskgroup.docs.dev]\n");
+    out.push_str("run = \"pnpm docs:dev\"\n");
+
+    print!("{out}");
     Ok(())
 }
 
@@ -477,38 +533,6 @@ pub fn add_task(name: Option<String>) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn copy_to_clipboard(text: &str) -> bool {
-    let cmd = if cfg!(target_os = "macos") {
-        "pbcopy"
-    } else if cfg!(target_os = "linux") {
-        "xclip"
-    } else {
-        return false;
-    };
-
-    let mut args = vec![];
-    if cmd == "xclip" {
-        args.extend(["-selection", "clipboard"]);
-    }
-
-    let Ok(mut child) = std::process::Command::new(cmd)
-        .args(&args)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-    else {
-        return false;
-    };
-
-    if let Some(ref mut stdin) = child.stdin
-        && stdin.write_all(text.as_bytes()).is_err()
-    {
-        return false;
-    }
-    child.wait().is_ok_and(|s| s.success())
 }
 
 fn check_dir_writable(dir: &std::path::Path) -> bool {

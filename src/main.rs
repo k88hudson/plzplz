@@ -52,8 +52,8 @@ enum PlzCommand {
     },
     /// Print JSON Schema for plz.toml
     Schema,
-    /// Browse and copy example task snippets
-    Example,
+    /// Print a cheatsheet of plz.toml features
+    Cheatsheet,
     /// Update plz to the latest version
     Update,
 }
@@ -138,8 +138,8 @@ const HELP_COMMANDS: &[HelpEntry] = &[
         description: "Print JSON Schema for plz.toml",
     },
     HelpEntry {
-        usage: "example",
-        description: "Browse and copy example task snippets",
+        usage: "cheatsheet",
+        description: "Print a cheatsheet of plz.toml features",
     },
     HelpEntry {
         usage: "update",
@@ -238,7 +238,7 @@ fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&schema)?);
                 return Ok(());
             }
-            Some(PlzCommand::Example) => return init::help_templates(),
+            Some(PlzCommand::Cheatsheet) => return init::print_cheatsheet(),
             Some(PlzCommand::Update) => return init::self_update(),
             Some(PlzCommand::Hooks { hook_command }) => {
                 let config_path =
@@ -408,7 +408,7 @@ fn try_plz_subcommand(task: &[String]) -> Option<Result<()>> {
                     .map_err(Into::into),
             )
         }
-        "example" => Some(init::help_templates()),
+        "cheatsheet" => Some(init::print_cheatsheet()),
         "update" => Some(init::self_update()),
         "help" => {
             print!("{}", format_help());

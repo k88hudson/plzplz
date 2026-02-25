@@ -15,7 +15,7 @@ for the TOML schema.
 | `plz hooks uninstall`   | Remove plz-managed git hooks                     |
 | `plz hooks run <stage>` | Run all tasks for a git hook stage               |
 | `plz schema`            | Print JSON schema for plz.toml                   |
-| `plz example`           | Show example plz.toml snippets                   |
+| `plz cheatsheet`        | Print a cheatsheet of plz.toml features           |
 | `plz update`            | Update plz to the latest version                 |
 | `plz plz`               | Set up user defaults in ~/.plz/                  |
 
