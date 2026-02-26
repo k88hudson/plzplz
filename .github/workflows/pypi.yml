@@ -18,12 +18,16 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            manylinux: auto
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
+            manylinux: musllinux_1_2
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
+            manylinux: auto
           - os: ubuntu-latest
             target: aarch64-unknown-linux-musl
+            manylinux: musllinux_1_2
           - os: macos-latest
             target: x86_64-apple-darwin
           - os: macos-latest
@@ -39,6 +43,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
           args: --release --out dist --features ring
       - uses: actions/upload-artifact@v6
         with:
