@@ -17,10 +17,6 @@ hero:
 
 ::: code-group
 
-```uv
-uv tool install plzplz
-```
-
 ```cargo
 cargo install plzplz
 ```
