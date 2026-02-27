@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.11](https://github.com/k88hudson/plzplz/compare/v0.0.10...v0.0.11) - 2026-02-27
+
+### Added
+
+- added a preamble to init templates
+
+### Other
+
+- maybe fix pypi
+- remove uv from site until it's fixed
+- fix aarch64-unknown-linux-gnu
+
 ## [0.0.10](https://github.com/k88hudson/plzplz/compare/v0.0.9...v0.0.10) - 2026-02-26
 
 ### Other
