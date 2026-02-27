@@ -9,6 +9,12 @@ use std::io::IsTerminal;
 use std::path::PathBuf;
 use toml_edit::DocumentMut;
 
+const PREAMBLE: &str = "\
+# Run tasks with: plz [taskname]
+# Docs: https://plzplz.org/reference.html
+# Show the schema for this file: plz plz schema
+";
+
 fn config_dir() -> Option<PathBuf> {
     settings::config_dir()
 }
@@ -155,7 +161,7 @@ pub fn run() -> Result<()> {
     let all_templates = templates::load_templates(cfg_dir.as_deref());
 
     if !interactive {
-        let output = "[tasks.hello]\nrun = \"echo 'hello world'\"";
+        let output = format!("{PREAMBLE}\n[tasks.hello]\nrun = \"echo 'hello world'\"");
         std::fs::write(&config_path, output)?;
         eprintln!("Created plz.toml with a starter task");
         return Ok(());
@@ -197,7 +203,7 @@ pub fn run() -> Result<()> {
     }
 
     if sorted_templates.is_empty() {
-        let output = "[tasks.hello]\nrun = \"echo 'hello world'\"";
+        let output = format!("{PREAMBLE}\n[tasks.hello]\nrun = \"echo 'hello world'\"");
         std::fs::write(&config_path, output)?;
         cliclack::outro("Created plz.toml with a starter task")?;
         return Ok(());
@@ -283,6 +289,8 @@ pub fn run() -> Result<()> {
         cliclack::outro("No tasks selected, skipping plz.toml creation")?;
         return Ok(());
     }
+
+    output.insert_str(0, &format!("{PREAMBLE}\n"));
 
     // Check if any selected template has git_hook tasks
     let in_git_repo = hooks::find_git_hooks_dir(&cwd).is_ok();
