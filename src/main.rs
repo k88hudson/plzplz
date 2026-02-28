@@ -7,7 +7,7 @@ mod templates;
 mod utils;
 
 use anyhow::{Result, bail};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use std::env;
 use std::io::IsTerminal;
 use std::path::PathBuf;
@@ -128,6 +128,14 @@ const HELP_COMMANDS: &[HelpEntry] = &[
     HelpEntry {
         usage: "hooks",
         description: "Install or manage git hooks",
+    },
+    HelpEntry {
+        usage: "hooks install",
+        description: "Install git hooks from plz.toml",
+    },
+    HelpEntry {
+        usage: "hooks uninstall",
+        description: "Uninstall plz-managed git hooks",
     },
     HelpEntry {
         usage: "hooks add",
@@ -254,7 +262,7 @@ fn main() -> Result<()> {
                         return hooks::run_stage(&config, stage, &base_dir, interactive);
                     }
                     None => {
-                        return hooks::interactive_install(&config, &base_dir, interactive);
+                        return hooks_no_subcommand(&config, &base_dir, interactive);
                     }
                 }
             }
@@ -392,6 +400,25 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+fn hooks_no_subcommand(
+    config: &config::PlzConfig,
+    base_dir: &std::path::Path,
+    interactive: bool,
+) -> Result<()> {
+    if !interactive {
+        hooks::status(config, base_dir)?;
+        eprintln!();
+        let help = Cli::command()
+            .find_subcommand_mut("plz")
+            .and_then(|c| c.find_subcommand_mut("hooks"))
+            .expect("hooks subcommand exists")
+            .render_help();
+        eprintln!("{help}");
+        return Ok(());
+    }
+    hooks::interactive_install(config, base_dir, interactive)
+}
+
 fn try_plz_subcommand(task: &[String]) -> Option<Result<()>> {
     let input = task.first()?.as_str();
     match input {
@@ -433,7 +460,7 @@ fn try_plz_subcommand(task: &[String]) -> Option<Result<()>> {
                     let interactive = !is_ci::cached()
                         && std::io::stdin().is_terminal()
                         && env::var_os("PLZ_COMMAND").is_none();
-                    Some(hooks::interactive_install(&config, &base_dir, interactive))
+                    Some(hooks_no_subcommand(&config, &base_dir, interactive))
                 }
             }
         }
