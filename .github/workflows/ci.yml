@@ -22,3 +22,20 @@ jobs:
       - run: cargo install --path .
       - run: plz check
       - run: plz test
+
+  python-compat:
+    name: Python compat (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.12"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: dtolnay/rust-toolchain@stable
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install .
+      - run: plz --help
