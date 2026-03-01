@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.12](https://github.com/k88hudson/plzplz/compare/v0.0.11...v0.0.12) - 2026-03-01
+
+### Fixed
+
+- safety hatch for hooks
+- slightly more helpful non-interactive message from plz hooks
+
+### Other
+
+- Add uv back to the site
+
 ## [0.0.11](https://github.com/k88hudson/plzplz/compare/v0.0.10...v0.0.11) - 2026-02-27
 
 ### Added
