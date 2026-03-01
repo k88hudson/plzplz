@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use toml_edit::DocumentMut;
 
 const MANAGED_MARKER: &str = "# plz:managed - do not edit";
-const HOOKS_VERSION: u32 = 2;
+const HOOKS_VERSION: u32 = 3;
 
 pub fn find_git_hooks_dir(base_dir: &Path) -> Result<PathBuf> {
     let mut dir = base_dir;
@@ -62,6 +62,11 @@ fn generate_hook_script(stage: &str) -> String {
          # plz:hooks_version={HOOKS_VERSION}\n\
          [ \"${{PLZ_SKIP_HOOKS}}\" = \"1\" ] && exit 0\n\
          command -v plz >/dev/null 2>&1 || {{ echo \"plz not found in PATH, skipping {stage} hook\" >&2; exit 0; }}\n\
+         if [ ! -f plz.toml ] && [ ! -f .plz.toml ]; then\n\
+           echo \"plz: no plz.toml found, skipping {stage} hook\" >&2\n\
+           echo \"plz: to remove this hook, delete .git/hooks/{stage}\" >&2\n\
+           exit 0\n\
+         fi\n\
          plz --no-interactive hooks run {stage}\n"
     )
 }
@@ -402,6 +407,8 @@ mod tests {
         assert!(script.contains("plz --no-interactive hooks run pre-commit"));
         assert!(script.contains("PLZ_SKIP_HOOKS"));
         assert!(script.contains("command -v plz"));
+        assert!(script.contains("no plz.toml found"));
+        assert!(script.contains("delete .git/hooks/pre-commit"));
     }
 
     #[test]
