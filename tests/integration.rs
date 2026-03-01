@@ -1943,6 +1943,32 @@ run = "cargo test"
     }
 
     #[test]
+    fn cli_hooks_run_via_shorthand() {
+        let dir = TempDir::new().unwrap();
+        let marker = dir.path().join("hook_ran.txt");
+        fs::write(
+            dir.path().join("plz.toml"),
+            format!(
+                r#"
+[tasks.check]
+run = "touch {}"
+git_hook = "pre-commit"
+"#,
+                marker.display()
+            ),
+        )
+        .unwrap();
+
+        // `plz hooks run pre-commit` goes through try_plz_subcommand
+        plz()
+            .args(["hooks", "run", "pre-commit"])
+            .current_dir(dir.path())
+            .assert()
+            .success();
+        assert!(marker.exists(), "hook task should have been executed");
+    }
+
+    #[test]
     fn cli_init_already_exists() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("plz.toml"), "[tasks]").unwrap();

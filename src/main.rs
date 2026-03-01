@@ -456,6 +456,16 @@ fn try_plz_subcommand(task: &[String]) -> Option<Result<()>> {
                 Some("install") => Some(hooks::install(&config, &base_dir)),
                 Some("uninstall") => Some(hooks::uninstall(&config, &base_dir)),
                 Some("add") => Some(hooks::add_hook(&config, &config_path)),
+                Some("run") => {
+                    let stage = match task.get(2) {
+                        Some(s) => s.clone(),
+                        None => return Some(Err(anyhow::anyhow!("Missing hook stage argument"))),
+                    };
+                    let interactive = !is_ci::cached()
+                        && std::io::stdin().is_terminal()
+                        && env::var_os("PLZ_COMMAND").is_none();
+                    Some(hooks::run_stage(&config, &stage, &base_dir, interactive))
+                }
                 _ => {
                     let interactive = !is_ci::cached()
                         && std::io::stdin().is_terminal()
