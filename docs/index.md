@@ -17,17 +17,17 @@ hero:
 
 ::: code-group
 
+```bash [macOS / Linux]
+# Installs to ~/.local/bin/plz
+curl --proto '=https' --tlsv1.2 -LsSf https://plzplz.org/install.sh | sh
+```
+
 ```uv
 uv tool install plzplz
 ```
 
 ```cargo
 cargo install plzplz
-```
-
-```bash [macOS / Linux]
-# Installs to ~/.local/bin/plz
-curl --proto '=https' --tlsv1.2 -LsSf https://plzplz.org/install.sh | sh
 ```
 
 :::
