@@ -91,7 +91,7 @@ fn is_plz_managed(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-pub fn install(config: &PlzConfig, base_dir: &Path) -> Result<()> {
+pub fn install(config: &PlzConfig, base_dir: &Path, force: bool) -> Result<()> {
     let stages = tasks_by_stage(config);
     if stages.is_empty() {
         eprintln!("No tasks have git_hook configured in plz.toml");
@@ -105,10 +105,13 @@ pub fn install(config: &PlzConfig, base_dir: &Path) -> Result<()> {
         let hook_path = hooks_dir.join(stage);
 
         if hook_path.exists() && !is_plz_managed(&hook_path) {
-            eprintln!(
-                "\x1b[33mWarning:\x1b[0m Skipping {stage} — existing hook is not plz-managed"
-            );
-            continue;
+            if !force {
+                eprintln!(
+                    "\x1b[33mWarning:\x1b[0m Skipping {stage} — existing hook is not plz-managed (use --force to overwrite)"
+                );
+                continue;
+            }
+            eprintln!("\x1b[33mOverwriting\x1b[0m existing {stage} hook");
         }
 
         let script = generate_hook_script(stage);
@@ -249,6 +252,11 @@ pub fn hint_uninstalled_hooks(config: &PlzConfig, base_dir: &Path) {
     }
 }
 
+/// Returns true if no tasks have git_hook configured.
+pub fn has_no_hooks(config: &PlzConfig) -> bool {
+    tasks_by_stage(config).is_empty()
+}
+
 /// Interactive hook install prompt (for `plz hooks` with no subcommand).
 /// Shows status, then offers yes/no install.
 pub fn interactive_install(config: &PlzConfig, base_dir: &Path, interactive: bool) -> Result<()> {
@@ -267,7 +275,7 @@ pub fn interactive_install(config: &PlzConfig, base_dir: &Path, interactive: boo
         .interact()?;
 
     if should_install {
-        install(config, base_dir)?;
+        install(config, base_dir, false)?;
     }
 
     Ok(())
@@ -387,7 +395,7 @@ pub fn add_hook(config: &PlzConfig, config_path: &Path) -> Result<()> {
             .initial_value(true)
             .interact()?;
         if should_install {
-            install(&updated_config, &base_dir)?;
+            install(&updated_config, &base_dir, false)?;
         }
     }
 

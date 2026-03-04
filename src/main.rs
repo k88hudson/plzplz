@@ -61,7 +61,11 @@ enum PlzCommand {
 #[derive(Subcommand)]
 enum HookCommand {
     /// Install git hooks from plz.toml
-    Install,
+    Install {
+        /// Overwrite existing non-plz-managed hooks
+        #[arg(long, short)]
+        force: bool,
+    },
     /// Uninstall plz-managed git hooks
     Uninstall,
     /// Add a git hook stage to existing tasks
@@ -255,7 +259,9 @@ fn main() -> Result<()> {
                 let base_dir = config_path.parent().unwrap().to_path_buf();
                 let interactive = is_interactive(&cli);
                 match hook_command {
-                    Some(HookCommand::Install) => return hooks::install(&config, &base_dir),
+                    Some(HookCommand::Install { force }) => {
+                        return hooks::install(&config, &base_dir, *force);
+                    }
                     Some(HookCommand::Uninstall) => return hooks::uninstall(&config, &base_dir),
                     Some(HookCommand::Add) => return hooks::add_hook(&config, &config_path),
                     Some(HookCommand::Run { stage, .. }) => {
@@ -405,6 +411,25 @@ fn hooks_no_subcommand(
     base_dir: &std::path::Path,
     interactive: bool,
 ) -> Result<()> {
+    if hooks::has_no_hooks(config) {
+        eprintln!("No tasks have git_hook configured. To add hooks, run `plz hooks add`.");
+        if interactive {
+            let should_add: bool = cliclack::confirm("Add hooks now?")
+                .initial_value(true)
+                .interact()?;
+            if should_add {
+                let config_path = base_dir.join(
+                    CONFIG_NAMES
+                        .iter()
+                        .find(|name| base_dir.join(name).exists())
+                        .unwrap_or(&"plz.toml"),
+                );
+                return hooks::add_hook(config, &config_path);
+            }
+        }
+        return Ok(());
+    }
+
     if !interactive {
         hooks::status(config, base_dir)?;
         eprintln!();
@@ -453,7 +478,7 @@ fn try_plz_subcommand(task: &[String]) -> Option<Result<()>> {
             let base_dir = config_path.parent().unwrap().to_path_buf();
             let sub = task.get(1).map(|s| s.as_str());
             match sub {
-                Some("install") => Some(hooks::install(&config, &base_dir)),
+                Some("install") => Some(hooks::install(&config, &base_dir, false)),
                 Some("uninstall") => Some(hooks::uninstall(&config, &base_dir)),
                 Some("add") => Some(hooks::add_hook(&config, &config_path)),
                 Some("run") => {
