@@ -1378,7 +1378,7 @@ git_hook = "pre-push"
 "#,
         );
         let cfg = config::load(&path).unwrap();
-        hooks::install(&cfg, dir.path(), false).unwrap();
+        hooks::install(&cfg, dir.path(), false, false).unwrap();
 
         let pre_commit = dir.path().join(".git/hooks/pre-commit");
         let pre_push = dir.path().join(".git/hooks/pre-push");
@@ -1410,7 +1410,7 @@ git_hook = "pre-commit"
 "#,
         );
         let cfg = config::load(&path).unwrap();
-        hooks::install(&cfg, dir.path(), false).unwrap();
+        hooks::install(&cfg, dir.path(), false, false).unwrap();
 
         let content = fs::read_to_string(&existing_hook).unwrap();
         assert!(
@@ -1437,7 +1437,7 @@ git_hook = "pre-commit"
 "#,
         );
         let cfg = config::load(&path).unwrap();
-        hooks::install(&cfg, dir.path(), true).unwrap();
+        hooks::install(&cfg, dir.path(), true, false).unwrap();
 
         let content = fs::read_to_string(&existing_hook).unwrap();
         assert!(
@@ -1468,7 +1468,7 @@ git_hook = "pre-commit"
 "#,
         );
         let cfg = config::load(&path).unwrap();
-        hooks::install(&cfg, dir.path(), false).unwrap();
+        hooks::install(&cfg, dir.path(), false, false).unwrap();
 
         let content = fs::read_to_string(&hook_path).unwrap();
         assert!(content.contains("plz:managed"));
@@ -1624,7 +1624,7 @@ git_hook = "pre-commit"
 "#,
         );
         let cfg = config::load(&path).unwrap();
-        hooks::install(&cfg, dir.path(), false).unwrap();
+        hooks::install(&cfg, dir.path(), false, false).unwrap();
 
         let content = fs::read_to_string(dir.path().join(".git/hooks/pre-commit")).unwrap();
         assert!(content.contains("PLZ_SKIP_HOOKS"), "missing skip env var");
@@ -1664,7 +1664,7 @@ git_hook = "pre-commit"
         )
         .unwrap();
 
-        hooks::install(&cfg, dir.path(), false).unwrap();
+        hooks::install(&cfg, dir.path(), false, false).unwrap();
         let content = fs::read_to_string(&hook_path).unwrap();
         assert!(
             content.contains("plz:hooks_version="),
@@ -1703,7 +1703,7 @@ git_hook = "pre-commit"
 "#,
         );
         let cfg = config::load(&path).unwrap();
-        hooks::install(&cfg, dir.path(), false).unwrap();
+        hooks::install(&cfg, dir.path(), false, false).unwrap();
 
         let hook_path = dir.path().join(".git/hooks/pre-commit");
         let perms = fs::metadata(&hook_path).unwrap().permissions();

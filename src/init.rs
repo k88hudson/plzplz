@@ -130,7 +130,7 @@ pub fn run() -> Result<()> {
                 .interact()?;
             if install_hooks {
                 if let Ok(ref cfg) = config::load(&config_path) {
-                    hooks::install(cfg, &cwd, false)?;
+                    hooks::install(cfg, &cwd, false, true)?;
                     cliclack::outro("Installed git hooks")?;
                 }
             } else {
@@ -304,7 +304,7 @@ pub fn run() -> Result<()> {
         std::fs::write(&config_path, output.trim_end())?;
 
         if install_hooks && let Ok(ref cfg) = config::load(&config_path) {
-            hooks::install(cfg, &cwd, false)?;
+            hooks::install(cfg, &cwd, false, true)?;
         }
     } else {
         std::fs::write(&config_path, output.trim_end())?;

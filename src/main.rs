@@ -260,7 +260,7 @@ fn main() -> Result<()> {
                 let interactive = is_interactive(&cli);
                 match hook_command {
                     Some(HookCommand::Install { force }) => {
-                        return hooks::install(&config, &base_dir, *force);
+                        return hooks::install(&config, &base_dir, *force, interactive);
                     }
                     Some(HookCommand::Uninstall) => return hooks::uninstall(&config, &base_dir),
                     Some(HookCommand::Add) => return hooks::add_hook(&config, &config_path),
@@ -477,8 +477,11 @@ fn try_plz_subcommand(task: &[String]) -> Option<Result<()>> {
             };
             let base_dir = config_path.parent().unwrap().to_path_buf();
             let sub = task.get(1).map(|s| s.as_str());
+            let interactive = !is_ci::cached()
+                && std::io::stdin().is_terminal()
+                && env::var_os("PLZ_COMMAND").is_none();
             match sub {
-                Some("install") => Some(hooks::install(&config, &base_dir, false)),
+                Some("install") => Some(hooks::install(&config, &base_dir, false, interactive)),
                 Some("uninstall") => Some(hooks::uninstall(&config, &base_dir)),
                 Some("add") => Some(hooks::add_hook(&config, &config_path)),
                 Some("run") => {

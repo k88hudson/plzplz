@@ -91,7 +91,7 @@ fn is_plz_managed(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-pub fn install(config: &PlzConfig, base_dir: &Path, force: bool) -> Result<()> {
+pub fn install(config: &PlzConfig, base_dir: &Path, force: bool, interactive: bool) -> Result<()> {
     let stages = tasks_by_stage(config);
     if stages.is_empty() {
         eprintln!("No tasks have git_hook configured in plz.toml");
@@ -105,13 +105,25 @@ pub fn install(config: &PlzConfig, base_dir: &Path, force: bool) -> Result<()> {
         let hook_path = hooks_dir.join(stage);
 
         if hook_path.exists() && !is_plz_managed(&hook_path) {
-            if !force {
+            if force {
+                eprintln!("\x1b[33mOverwriting\x1b[0m existing {stage} hook");
+            } else if interactive {
+                let should_overwrite: bool = cliclack::confirm(format!(
+                    "{stage} hook exists and is not plz-managed. Overwrite it?"
+                ))
+                .initial_value(false)
+                .interact()?;
+                if !should_overwrite {
+                    eprintln!("\x1b[2mSkipping {stage}\x1b[0m");
+                    continue;
+                }
+                eprintln!("\x1b[33mOverwriting\x1b[0m existing {stage} hook");
+            } else {
                 eprintln!(
-                    "\x1b[33mWarning:\x1b[0m Skipping {stage} — existing hook is not plz-managed (use --force to overwrite)"
+                    "\x1b[33mWarning:\x1b[0m Skipping {stage} — existing hook is not plz-managed (use `plz hooks install --force` to overwrite)"
                 );
                 continue;
             }
-            eprintln!("\x1b[33mOverwriting\x1b[0m existing {stage} hook");
         }
 
         let script = generate_hook_script(stage);
@@ -275,7 +287,7 @@ pub fn interactive_install(config: &PlzConfig, base_dir: &Path, interactive: boo
         .interact()?;
 
     if should_install {
-        install(config, base_dir, false)?;
+        install(config, base_dir, false, interactive)?;
     }
 
     Ok(())
@@ -395,7 +407,7 @@ pub fn add_hook(config: &PlzConfig, config_path: &Path) -> Result<()> {
             .initial_value(true)
             .interact()?;
         if should_install {
-            install(&updated_config, &base_dir, false)?;
+            install(&updated_config, &base_dir, false, true)?;
         }
     }
 
