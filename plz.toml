@@ -30,7 +30,7 @@ fail_hook = { suggest_command = "cargo fmt" }
 
 # Check linting and formating
 [tasks.check]
-run_parallel = ["plz format", "plz lint"]
+run_parallel = ["plz healthcheck", "plz format", "plz lint"]
 git_hook = "pre-commit"
 
 # Install locally

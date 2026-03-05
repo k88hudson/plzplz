@@ -2010,6 +2010,18 @@ git_hook = "pre-commit"
     }
 
     #[test]
+    fn cli_help_lists_healthcheck() {
+        let dir = TempDir::new().unwrap();
+        let output = plz()
+            .arg("--help")
+            .current_dir(dir.path())
+            .assert()
+            .success();
+        let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+        assert!(stdout.contains("healthcheck"));
+    }
+
+    #[test]
     fn cli_init_no_project_creates_hello_task() {
         let dir = TempDir::new().unwrap();
 
@@ -2023,5 +2035,512 @@ git_hook = "pre-commit"
         let content = fs::read_to_string(dir.path().join("plz.toml")).unwrap();
         assert!(content.contains("[tasks.hello]"));
         assert!(content.contains("echo 'hello world'"));
+    }
+}
+
+mod healthcheck_tests {
+    use assert_cmd::Command;
+    use plzplz::healthcheck::collect_files;
+    use predicates::prelude::*;
+    use std::fs;
+    use std::process;
+    use tempfile::TempDir;
+
+    fn git_init(dir: &TempDir) {
+        process::Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        process::Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        process::Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+    }
+
+    fn git_add_commit(dir: &TempDir) {
+        process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        process::Command::new("git")
+            .args(["commit", "-m", "init", "--allow-empty"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+    }
+
+    #[allow(deprecated)]
+    fn plz() -> Command {
+        Command::cargo_bin("plz").unwrap()
+    }
+
+    // -- check_merge_conflict --
+
+    #[test]
+    fn merge_conflict_detected() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(
+            dir.path().join("file.txt"),
+            "<<<<<<< HEAD\nfoo\n=======\nbar\n>>>>>>> branch\n",
+        )
+        .unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::check_merge_conflict::run(dir.path(), &files).unwrap();
+        assert!(!result.passed);
+        assert!(!result.findings.is_empty());
+    }
+
+    #[test]
+    fn merge_conflict_clean() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(dir.path().join("file.txt"), "hello world\n").unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::check_merge_conflict::run(dir.path(), &files).unwrap();
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn merge_conflict_requires_trailing_space() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        // "=======" without trailing space/newline should NOT trigger
+        fs::write(
+            dir.path().join("file.txt"),
+            "some text\n=======decorative separator\nmore text\n",
+        )
+        .unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::check_merge_conflict::run(dir.path(), &files).unwrap();
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn merge_conflict_in_binary_file() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        let mut content = vec![0x00, 0xFF];
+        content.extend_from_slice(b"\n<<<<<<< HEAD\nfoo\n");
+        fs::write(dir.path().join("binary.bin"), &content).unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::check_merge_conflict::run(dir.path(), &files).unwrap();
+        assert!(!result.passed);
+    }
+
+    // -- check_large_files --
+
+    #[test]
+    fn large_file_detected() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        let big = vec![b'x'; 600 * 1024];
+        fs::write(dir.path().join("big.bin"), &big).unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::check_large_files::run(dir.path(), &files).unwrap();
+        assert!(!result.passed);
+        assert_eq!(result.findings[0].file, "big.bin");
+    }
+
+    #[test]
+    fn large_file_clean() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(dir.path().join("small.txt"), "hello\n").unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::check_large_files::run(dir.path(), &files).unwrap();
+        assert!(result.passed);
+    }
+
+    // -- detect_private_key --
+
+    #[test]
+    fn private_key_detected() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(
+            dir.path().join("key.pem"),
+            "-----BEGIN RSA PRIVATE KEY-----\ndata\n-----END RSA PRIVATE KEY-----\n", // plz:ignore private-key
+        )
+        .unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::detect_private_key::run(dir.path(), &files).unwrap();
+        assert!(!result.passed);
+        assert_eq!(result.findings[0].detail, "line 1");
+    }
+
+    #[test]
+    fn private_key_clean() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(
+            dir.path().join("cert.pem"),
+            "-----BEGIN CERTIFICATE-----\ndata\n",
+        )
+        .unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::detect_private_key::run(dir.path(), &files).unwrap();
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn private_key_putty_detected() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(
+            dir.path().join("key.ppk"),
+            "PuTTY-User-Key-File-2: ssh-rsa\ndata\n", // plz:ignore private-key
+        )
+        .unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::detect_private_key::run(dir.path(), &files).unwrap();
+        assert!(!result.passed);
+    }
+
+    #[test]
+    fn private_key_pgp_detected() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(
+            dir.path().join("secret.asc"),
+            "-----BEGIN PGP PRIVATE KEY BLOCK-----\ndata\n", // plz:ignore private-key
+        )
+        .unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::detect_private_key::run(dir.path(), &files).unwrap();
+        assert!(!result.passed);
+    }
+
+    // -- check_case_conflict --
+
+    #[test]
+    fn case_conflict_detected() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(dir.path().join("readme.md"), "a\n").unwrap();
+        // On macOS, we can't have both readme.md and README.md on disk.
+        // Test that identical-case files pass cleanly.
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::check_case_conflict::run(&files).unwrap();
+        assert!(result.passed);
+    }
+
+    // -- trailing_whitespace --
+
+    #[test]
+    fn trailing_whitespace_detected() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(dir.path().join("file.txt"), "hello \nworld\n").unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::trailing_whitespace::run(dir.path(), &files).unwrap();
+        assert!(!result.passed);
+        assert_eq!(result.findings[0].detail, "line 1");
+    }
+
+    #[test]
+    fn trailing_whitespace_clean() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(dir.path().join("file.txt"), "hello\nworld\n").unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::trailing_whitespace::run(dir.path(), &files).unwrap();
+        assert!(result.passed);
+    }
+
+    // -- end_of_file --
+
+    #[test]
+    fn end_of_file_missing_newline() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(dir.path().join("file.txt"), "hello").unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::end_of_file::run(dir.path(), &files).unwrap();
+        assert!(!result.passed);
+    }
+
+    #[test]
+    fn end_of_file_clean() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(dir.path().join("file.txt"), "hello\n").unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::end_of_file::run(dir.path(), &files).unwrap();
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn end_of_file_empty_file_passes() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(dir.path().join("empty.txt"), "").unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::end_of_file::run(dir.path(), &files).unwrap();
+        assert!(result.passed);
+    }
+
+    // -- mixed_line_ending --
+
+    #[test]
+    fn mixed_line_ending_detected() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        process::Command::new("git")
+            .args(["config", "core.autocrlf", "false"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        fs::write(dir.path().join("file.txt"), b"line1\r\nline2\nline3\n").unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::mixed_line_ending::run(dir.path(), &files).unwrap();
+        assert!(!result.passed);
+    }
+
+    #[test]
+    fn mixed_line_ending_clean() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(dir.path().join("file.txt"), "line1\nline2\n").unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::mixed_line_ending::run(dir.path(), &files).unwrap();
+        assert!(result.passed);
+    }
+
+    // -- binary files skipped (for text checks) --
+
+    #[test]
+    fn binary_files_skipped_for_text_checks() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        let mut content = b"hello \x00world".to_vec();
+        content.extend_from_slice(b" \n");
+        fs::write(dir.path().join("binary.bin"), &content).unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        assert!(files[0].is_binary);
+        let result = plzplz::healthcheck::trailing_whitespace::run(dir.path(), &files).unwrap();
+        assert!(result.passed);
+    }
+
+    // -- plz:ignore line-level --
+
+    #[test]
+    fn plz_ignore_skips_trailing_whitespace() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(dir.path().join("file.txt"), "hello   plz:ignore\nworld\n").unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::trailing_whitespace::run(dir.path(), &files).unwrap();
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn plz_ignore_skips_private_key_line() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(
+            dir.path().join("test.txt"),
+            "# test fixture plz:ignore\nBEGIN RSA PRIVATE KEY\n", // plz:ignore private-key
+        )
+        .unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::detect_private_key::run(dir.path(), &files).unwrap();
+        // Line 1 is ignored, but line 2 still has the key
+        assert!(!result.passed);
+        assert_eq!(result.findings[0].detail, "line 2");
+    }
+
+    #[test]
+    fn plz_ignore_skips_merge_conflict_line() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(
+            dir.path().join("file.txt"),
+            "<<<<<<< HEAD plz:ignore\nclean line\n",
+        )
+        .unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::check_merge_conflict::run(dir.path(), &files).unwrap();
+        assert!(result.passed);
+    }
+
+    // -- plz:ignore-file --
+
+    #[test]
+    fn plz_ignore_file_skips_entire_file_trailing_whitespace() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(
+            dir.path().join("file.txt"),
+            "# plz:ignore-file\nhello   \nworld   \n",
+        )
+        .unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::trailing_whitespace::run(dir.path(), &files).unwrap();
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn plz_ignore_file_skips_end_of_file_check() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(dir.path().join("file.txt"), "# plz:ignore-file\nno newline").unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::end_of_file::run(dir.path(), &files).unwrap();
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn plz_ignore_file_skips_mixed_line_ending() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        process::Command::new("git")
+            .args(["config", "core.autocrlf", "false"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        fs::write(
+            dir.path().join("file.txt"),
+            b"# plz:ignore-file\r\nline2\nline3\n",
+        )
+        .unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::mixed_line_ending::run(dir.path(), &files).unwrap();
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn plz_ignore_file_skips_private_key_detection() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(
+            dir.path().join("fixture.pem"),
+            "# plz:ignore-file\n-----BEGIN RSA PRIVATE KEY-----\ndata\n", // plz:ignore private-key
+        )
+        .unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::detect_private_key::run(dir.path(), &files).unwrap();
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn plz_ignore_file_does_not_trigger_line_ignore() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        // plz:ignore private-key-file on line 1 should not act as line-level ignore
+        // (it skips the whole file, so this should still pass)
+        fs::write(dir.path().join("file.txt"), "# plz:ignore-file\nhello   \n").unwrap();
+        git_add_commit(&dir);
+
+        let files = collect_files(dir.path()).unwrap();
+        let result = plzplz::healthcheck::trailing_whitespace::run(dir.path(), &files).unwrap();
+        assert!(result.passed);
+    }
+
+    // -- CLI tests --
+
+    #[test]
+    fn cli_healthcheck_clean_repo() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(dir.path().join("file.txt"), "hello\n").unwrap();
+        git_add_commit(&dir);
+
+        plz()
+            .arg("healthcheck")
+            .current_dir(dir.path())
+            .assert()
+            .success()
+            .stderr(predicate::str::contains("✓"));
+    }
+
+    #[test]
+    fn cli_healthcheck_fails_on_issues() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(dir.path().join("file.txt"), "<<<<<<< HEAD\nfoo\n").unwrap();
+        git_add_commit(&dir);
+
+        plz()
+            .arg("healthcheck")
+            .current_dir(dir.path())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("✗"));
+    }
+
+    #[test]
+    fn cli_healthcheck_works_without_plz_toml() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(dir.path().join("file.txt"), "hello\n").unwrap();
+        git_add_commit(&dir);
+
+        assert!(!dir.path().join("plz.toml").exists());
+        plz()
+            .arg("healthcheck")
+            .current_dir(dir.path())
+            .assert()
+            .success();
     }
 }

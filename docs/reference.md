@@ -14,6 +14,7 @@ for the TOML schema.
 | `plz hooks install`     | Install git hooks defined in plz.toml            |
 | `plz hooks uninstall`   | Remove plz-managed git hooks                     |
 | `plz hooks run <stage>` | Run all tasks for a git hook stage               |
+| `plz healthcheck`       | Run code health checks on your repo              |
 | `plz schema`            | Print JSON schema for plz.toml                   |
 | `plz cheatsheet`        | Print a cheatsheet of plz.toml features           |
 | `plz update`            | Update plz to the latest version                 |
@@ -191,4 +192,52 @@ dir = "docs"
 [taskgroup.docs.build]
 run = "pnpm build"
 # inherits CI=true from top-level, dir=docs from group
+```
+
+## Healthcheck
+
+`plz healthcheck` runs Rust-native code health checks on any git repo. No `plz.toml` required.
+
+```bash
+plz healthcheck
+```
+
+### Checks
+
+| Check | What it detects |
+|-------|----------------|
+| Check merge conflict markers | `<<<<<<<`, `=======`, `>>>>>>>` at line start |
+| Check large files (>500KB) | Files exceeding 500KB in the git index |
+| Detect private keys | `BEGIN *PRIVATE KEY` headers |
+| Check case conflicts | Filenames that collide case-insensitively |
+| Trailing whitespace | Lines ending in spaces or tabs |
+| End of file newline | Files missing a final newline |
+| Mixed line endings | Files with both `\r\n` and `\n` |
+
+Binary files are automatically skipped for content checks. Exit code is 1 if any check fails.
+
+### Ignoring findings
+
+Add `plz:ignore <rule>` to a line to suppress a specific check on that line. Use `plz:ignore` without a rule to suppress all checks.
+
+```
+<<<<<<< HEAD  # plz:ignore merge-conflict
+some trailing whitespace   // plz:ignore trailing-whitespace
+```
+
+Add `plz:ignore-file <rule>` to the first line of a file to skip an entire file for that check:
+
+```
+# plz:ignore-file private-key
+BEGIN RSA PRIVATE KEY  (this file will be skipped) <!-- plz:ignore private-key -->
+```
+
+### Using with git hooks
+
+Wire healthcheck into a pre-commit hook via `plz.toml`:
+
+```toml
+[tasks.healthcheck]
+run = "plz healthcheck"
+git_hook = "pre-commit"
 ```

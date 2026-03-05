@@ -1,4 +1,5 @@
 mod config;
+mod healthcheck;
 mod hooks;
 mod init;
 mod runner;
@@ -56,6 +57,8 @@ enum PlzCommand {
     Cheatsheet,
     /// Update plz to the latest version
     Update,
+    /// Run code health checks on your repo
+    Healthcheck,
 }
 
 #[derive(Subcommand)]
@@ -158,6 +161,10 @@ const HELP_COMMANDS: &[HelpEntry] = &[
         description: "Update plz to the latest version",
     },
     HelpEntry {
+        usage: "healthcheck",
+        description: "Run code health checks on your repo",
+    },
+    HelpEntry {
         usage: "plz",
         description: "Manage global defaults",
     },
@@ -185,6 +192,9 @@ pub fn format_help() -> String {
     let reset = "\x1b[0m";
 
     let mut out = String::new();
+    out.push_str(&format!(
+        "{dim}plz is a simple task runner. Define tasks in plz.toml and run them with plz.\nRun {reset}{bold}plz schema{reset}{dim} to see the full schema for plz.toml.{reset}\n\n"
+    ));
     out.push_str(&format!(
         "{bold}plz{reset} [task] [args...]          Run a task from plz.toml\n"
     ));
@@ -252,6 +262,10 @@ fn main() -> Result<()> {
             }
             Some(PlzCommand::Cheatsheet) => return init::print_cheatsheet(),
             Some(PlzCommand::Update) => return init::self_update(),
+            Some(PlzCommand::Healthcheck) => {
+                let base_dir = std::env::current_dir()?;
+                return healthcheck::run_healthcheck(&base_dir);
+            }
             Some(PlzCommand::Hooks { hook_command }) => {
                 let config_path =
                     find_config().ok_or_else(|| anyhow::anyhow!("No plz.toml found"))?;
@@ -465,6 +479,13 @@ fn try_plz_subcommand(task: &[String]) -> Option<Result<()>> {
         "help" => {
             print!("{}", format_help());
             Some(Ok(()))
+        }
+        "healthcheck" => {
+            let base_dir = match env::current_dir() {
+                Ok(d) => d,
+                Err(e) => return Some(Err(e.into())),
+            };
+            Some(healthcheck::run_healthcheck(&base_dir))
         }
         "hooks" => {
             let config_path = match find_config() {
