@@ -84,6 +84,13 @@ Reference other tasks with `plz:taskname` or `plz:group:task` syntax in serial/p
 run_parallel = ["plz:lint", "plz:format"]
 ```
 
+Reference group tasks with `plz:group:task`:
+
+```toml
+[tasks.all]
+run_parallel = ["plz:ui:build", "plz:api:build"]
+```
+
 ### Working directory
 
 ```toml

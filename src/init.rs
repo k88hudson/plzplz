@@ -428,6 +428,12 @@ pub fn print_cheatsheet() -> Result<()> {
     out.push_str("[tasks.check]\n");
     out.push_str("run_parallel = [\"plz:lint\", \"plz:format\"]\n\n");
 
+    out.push_str(&format!(
+        "{cyan}Group task references{reset}  {dim}plz:group:task{reset}\n"
+    ));
+    out.push_str("[tasks.all]\n");
+    out.push_str("run_parallel = [\"plz:ui:build\", \"plz:api:build\"]\n\n");
+
     out.push_str(&format!("{cyan}Working directory{reset}\n"));
     out.push_str("[tasks.frontend]\n");
     out.push_str("dir = \"packages/web\"\n");
