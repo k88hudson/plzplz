@@ -186,6 +186,54 @@ enum ResolvedTask {
     GroupTask(String, String),
 }
 
+fn all_task_entries(config: &config::PlzConfig) -> Vec<(String, ResolvedTask)> {
+    let mut entries: Vec<(String, ResolvedTask)> = Vec::new();
+    let mut names: Vec<&String> = config.tasks.keys().collect();
+    names.sort();
+    for name in &names {
+        entries.push((name.to_string(), ResolvedTask::Task(name.to_string())));
+    }
+    if let Some(ref groups) = config.taskgroup {
+        let mut group_names: Vec<&String> = groups.keys().collect();
+        group_names.sort();
+        for gname in group_names {
+            let group = &groups[gname];
+            let mut task_names: Vec<&String> = group.tasks.keys().collect();
+            task_names.sort();
+            for tname in task_names {
+                entries.push((
+                    format!("{gname}:{tname}"),
+                    ResolvedTask::GroupTask(gname.clone(), tname.clone()),
+                ));
+            }
+        }
+    }
+    entries
+}
+
+fn entries_to_pick_items(
+    entries: &[(String, ResolvedTask)],
+    config: &config::PlzConfig,
+) -> Vec<utils::PickItem> {
+    entries
+        .iter()
+        .map(|(label, resolved)| {
+            let desc = match resolved {
+                ResolvedTask::Task(n) => config.tasks[n].description.clone().unwrap_or_default(),
+                ResolvedTask::GroupTask(g, t) => config
+                    .get_group_task(g, t)
+                    .and_then(|task| task.description.clone())
+                    .unwrap_or_default(),
+            };
+            utils::PickItem {
+                label: label.clone(),
+                description: desc,
+                preview: None,
+            }
+        })
+        .collect()
+}
+
 pub fn format_help() -> String {
     let dim = "\x1b[2m";
     let bold = "\x1b[1m";
@@ -317,52 +365,11 @@ fn main() -> Result<()> {
             bail!("No task specified (running in non-interactive mode)");
         }
 
-        // Build pick list: top-level tasks + group:task entries
-        let mut pick_entries: Vec<(String, ResolvedTask)> = Vec::new();
-        let mut names: Vec<&String> = config.tasks.keys().collect();
-        names.sort();
-        for name in &names {
-            pick_entries.push((name.to_string(), ResolvedTask::Task(name.to_string())));
-        }
-        if let Some(ref groups) = config.taskgroup {
-            let mut group_names: Vec<&String> = groups.keys().collect();
-            group_names.sort();
-            for gname in group_names {
-                let group = &groups[gname];
-                let mut task_names: Vec<&String> = group.tasks.keys().collect();
-                task_names.sort();
-                for tname in task_names {
-                    pick_entries.push((
-                        format!("{gname}:{tname}"),
-                        ResolvedTask::GroupTask(gname.clone(), tname.clone()),
-                    ));
-                }
-            }
-        }
-
+        let pick_entries = all_task_entries(&config);
         if pick_entries.is_empty() {
             bail!("No tasks defined in plz.toml");
         }
-
-        let items: Vec<utils::PickItem> = pick_entries
-            .iter()
-            .map(|(label, resolved)| {
-                let desc = match resolved {
-                    ResolvedTask::Task(n) => {
-                        config.tasks[n].description.clone().unwrap_or_default()
-                    }
-                    ResolvedTask::GroupTask(g, t) => config
-                        .get_group_task(g, t)
-                        .and_then(|task| task.description.clone())
-                        .unwrap_or_default(),
-                };
-                utils::PickItem {
-                    label: label.clone(),
-                    description: desc,
-                    preview: None,
-                }
-            })
-            .collect();
+        let items = entries_to_pick_items(&pick_entries, &config);
         match utils::pick_from_list(&items, "Enter to run · Esc to cancel")? {
             Some(idx) => {
                 match &pick_entries[idx].1 {
@@ -638,59 +645,52 @@ fn resolve_task(
         }
     }
 
-    // 3. Fall through to fuzzy match on top-level tasks
+    // 3. Fall through to fuzzy match on top-level tasks + group tasks
     if !interactive {
         bail!("\"{input}\" isn't a task. Run `plz` to see all commands.");
     }
 
-    let mut matches: Vec<&String> = config
-        .tasks
-        .keys()
-        .filter(|k| utils::fuzzy_match(input, k))
+    let mut all_entries = all_task_entries(config);
+
+    let matches: Vec<usize> = all_entries
+        .iter()
+        .enumerate()
+        .filter(|(_, (label, _))| utils::fuzzy_match(input, label))
+        .map(|(i, _)| i)
         .collect();
-    matches.sort();
 
     match matches.len() {
         0 => {
             eprintln!("\x1b[2m\"{input}\" isn't a task.\x1b[0m\n");
-            let mut names: Vec<&String> = config.tasks.keys().collect();
-            names.sort();
-            if names.is_empty() {
+            if all_entries.is_empty() {
                 bail!("No tasks defined in plz.toml");
             }
-            let items: Vec<utils::PickItem> = names
-                .iter()
-                .map(|name| utils::PickItem {
-                    label: name.to_string(),
-                    description: config.tasks[*name].description.clone().unwrap_or_default(),
-                    preview: None,
-                })
-                .collect();
+            let items = entries_to_pick_items(&all_entries, config);
             match utils::pick_from_list(&items, "Enter to run · Esc to cancel")? {
-                Some(idx) => Ok(ResolvedTask::Task(names[idx].clone())),
+                Some(idx) => Ok(all_entries.remove(idx).1),
                 None => bail!("Cancelled"),
             }
         }
         1 => {
-            let confirmed: bool = cliclack::confirm(format!("Did you mean \"{}\"?", matches[0]))
+            let label = &all_entries[matches[0]].0;
+            let confirmed: bool = cliclack::confirm(format!("Did you mean \"{label}\"?"))
                 .initial_value(true)
                 .interact()?;
             if confirmed {
-                Ok(ResolvedTask::Task(matches[0].clone()))
+                Ok(all_entries.remove(matches[0]).1)
             } else {
                 bail!("Cancelled");
             }
         }
         _ => {
-            let selected: &&String = cliclack::select("Did you mean...".to_string())
-                .items(
-                    &matches
-                        .iter()
-                        .map(|n| (n, n.as_str(), ""))
-                        .collect::<Vec<_>>(),
-                )
+            let items: Vec<(&usize, &str, &str)> = matches
+                .iter()
+                .map(|i| (i, all_entries[*i].0.as_str(), ""))
+                .collect();
+            let selected: &usize = cliclack::select("Did you mean...".to_string())
+                .items(&items)
                 .interact()?;
-            Ok(ResolvedTask::Task(selected.to_string()))
+            Ok(all_entries.remove(*selected).1)
         }
     }
 }
