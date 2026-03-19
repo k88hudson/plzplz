@@ -172,9 +172,9 @@ impl JsonSchema for StringOrVec {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct Task {
-    /// A single shell command to run
+    /// A shell command (or list of commands to run serially) to run
     #[serde(default)]
-    pub run: Option<String>,
+    pub run: Option<StringOrVec>,
     /// Multiple commands to run one after another (stops on first failure)
     #[serde(default)]
     pub run_serial: Option<Vec<String>>,

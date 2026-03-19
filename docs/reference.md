@@ -41,6 +41,13 @@ Tasks are defined in `plz.toml` (or `.plz.toml`) at your project root.
 run = "cargo build"
 ```
 
+`run` also accepts an array, which runs commands serially (equivalent to `run_serial`):
+
+```toml
+[tasks.fix]
+run = ["cargo fmt", "cargo clippy --fix --allow-dirty"]
+```
+
 Comments above a task table are used as the task description in `plz --help`:
 
 ```toml
@@ -59,7 +66,7 @@ description = "Build the project"
 
 ### Serial execution
 
-Run commands in order, stopping on first failure:
+Run commands in order, stopping on first failure. You can use `run_serial` or pass an array to `run`:
 
 ```toml
 [tasks.fix]

@@ -51,6 +51,7 @@ plz format
 ## Features
 
 - **Auto-detect environments** — `plz init` detects Rust, pnpm, npm, uv and suggests tasks
+- **Task dependencies** — declare prerequisites with `depends` so tasks run in the right order
 - **Serial & parallel execution** — `run_serial` and `run_parallel` for composing tasks
 - **Failure hooks** — suggest commands, show messages, or run scripts on failure
 - **Task groups** — organize related tasks with `[taskgroup.X]` namespaces

@@ -243,22 +243,35 @@ fn run_task_core(
     };
 
     let result: Result<()> = (|| {
-        if let Some(ref cmd) = task.run {
-            let wrapped = if extra_args.is_empty() {
-                wrap(cmd)
+        if let Some(ref run) = task.run {
+            if run.0.len() == 1 {
+                let cmd = &run.0[0];
+                let wrapped = if extra_args.is_empty() {
+                    wrap(cmd)
+                } else {
+                    let args_str = shlex::try_join(extra_args.iter().map(|s| s.as_str()))
+                        .map_err(|e| anyhow::anyhow!("Failed to escape arguments: {e}"))?;
+                    format!("{} {args_str}", wrap(cmd))
+                };
+                run_command_or_ref(
+                    config,
+                    &wrapped,
+                    &work_dir,
+                    base_dir,
+                    interactive,
+                    completed,
+                )?;
             } else {
-                let args_str = shlex::try_join(extra_args.iter().map(|s| s.as_str()))
-                    .map_err(|e| anyhow::anyhow!("Failed to escape arguments: {e}"))?;
-                format!("{} {args_str}", wrap(cmd))
-            };
-            run_command_or_ref(
-                config,
-                &wrapped,
-                &work_dir,
-                base_dir,
-                interactive,
-                completed,
-            )?;
+                run_serial_commands(
+                    config,
+                    &run.0,
+                    &wrap,
+                    &work_dir,
+                    base_dir,
+                    interactive,
+                    completed,
+                )?;
+            }
         }
 
         if let Some(ref cmds) = task.run_serial {

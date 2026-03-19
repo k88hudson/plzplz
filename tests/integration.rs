@@ -57,7 +57,10 @@ run = "echo hello"
 "#,
         );
         let cfg = config::load(&path).unwrap();
-        assert_eq!(cfg.tasks["hello"].run.as_deref(), Some("echo hello"));
+        assert_eq!(
+            cfg.tasks["hello"].run.as_ref().unwrap().0,
+            vec!["echo hello"]
+        );
     }
 
     #[test]
@@ -369,8 +372,13 @@ run = "cargo build"
         assert!(cfg.get_group_task("rust", "test").is_some());
         assert!(cfg.get_group_task("rust", "build").is_some());
         assert_eq!(
-            cfg.get_group_task("rust", "test").unwrap().run.as_deref(),
-            Some("cargo test")
+            cfg.get_group_task("rust", "test")
+                .unwrap()
+                .run
+                .as_ref()
+                .unwrap()
+                .0,
+            vec!["cargo test"]
         );
     }
 

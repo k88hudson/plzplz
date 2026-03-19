@@ -153,12 +153,25 @@
           "default": null
         },
         "run": {
-          "description": "A single shell command to run",
-          "type": [
-            "string",
-            "null"
-          ],
-          "default": null
+          "description": "A shell command (or list of commands to run serially) to run",
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "run_parallel": {
           "description": "Multiple commands to run concurrently",
