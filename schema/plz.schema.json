@@ -57,6 +57,27 @@
     "Task": {
       "type": "object",
       "properties": {
+        "depends": {
+          "description": "Prerequisite tasks to run before this task. Use dot notation for group tasks (e.g. \"group.task\").",
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "description": {
           "description": "Description shown in `plz list`",
           "type": [

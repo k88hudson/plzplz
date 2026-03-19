@@ -584,6 +584,145 @@ run = "echo hello"
     }
 
     #[test]
+    fn parse_depends_string() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.build]
+run = "echo build"
+
+[tasks.test]
+depends = "build"
+run = "echo test"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        let deps = cfg.tasks["test"].depends.as_ref().unwrap();
+        assert_eq!(deps.0, vec!["build"]);
+    }
+
+    #[test]
+    fn parse_depends_list() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.build]
+run = "echo build"
+
+[tasks.lint]
+run = "echo lint"
+
+[tasks.deploy]
+depends = ["build", "lint"]
+run = "echo deploy"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        let deps = cfg.tasks["deploy"].depends.as_ref().unwrap();
+        assert_eq!(deps.0, vec!["build", "lint"]);
+    }
+
+    #[test]
+    fn depends_nonexistent_errors() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.test]
+depends = "missing"
+run = "echo test"
+"#,
+        );
+        let err = config::load(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("no task \"missing\" exists"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn depends_circular_errors() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.a]
+depends = "b"
+run = "echo a"
+
+[tasks.b]
+depends = "a"
+run = "echo b"
+"#,
+        );
+        let err = config::load(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("Circular dependency"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn depends_self_errors() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.a]
+depends = "a"
+run = "echo a"
+"#,
+        );
+        let err = config::load(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("Circular dependency"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn depends_group_task_ref() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.serve]
+depends = ["ui.build"]
+run = "echo serve"
+
+[taskgroup.ui.build]
+run = "echo build"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        let deps = cfg.tasks["serve"].depends.as_ref().unwrap();
+        assert_eq!(deps.0, vec!["ui.build"]);
+    }
+
+    #[test]
+    fn depends_group_task_nonexistent_errors() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.serve]
+depends = ["ui.missing"]
+run = "echo serve"
+
+[taskgroup.ui.build]
+run = "echo build"
+"#,
+        );
+        let err = config::load(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("no task \"ui.missing\" exists"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
     fn parse_invalid_toml_errors() {
         let dir = TempDir::new().unwrap();
         let path = write_config(&dir, "this is not valid toml [[[");
@@ -966,6 +1105,145 @@ run = "touch {}"
         runner::run_task(&cfg, "main", dir.path(), false).unwrap();
         assert!(m1.exists());
         assert!(m2.exists());
+    }
+
+    #[test]
+    fn depends_runs_before_task() {
+        let dir = TempDir::new().unwrap();
+        let marker = dir.path().join("dep_marker.txt");
+        let out = dir.path().join("main_out.txt");
+        let cfg = load_config(
+            &dir,
+            &format!(
+                r#"
+[tasks.setup]
+run = "touch {}"
+
+[tasks.main]
+depends = "setup"
+run = "test -f {} && touch {}"
+"#,
+                marker.display(),
+                marker.display(),
+                out.display()
+            ),
+        );
+        runner::run_task(&cfg, "main", dir.path(), false).unwrap();
+        assert!(marker.exists());
+        assert!(out.exists());
+    }
+
+    #[test]
+    fn depends_failure_prevents_task() {
+        let dir = TempDir::new().unwrap();
+        let marker = dir.path().join("should_not_exist.txt");
+        let cfg = load_config(
+            &dir,
+            &format!(
+                r#"
+[tasks.bad]
+run = "false"
+
+[tasks.main]
+depends = "bad"
+run = "touch {}"
+"#,
+                marker.display()
+            ),
+        );
+        assert!(runner::run_task(&cfg, "main", dir.path(), false).is_err());
+        assert!(!marker.exists());
+    }
+
+    #[test]
+    fn depends_multiple_run_in_order() {
+        let dir = TempDir::new().unwrap();
+        let m1 = dir.path().join("dep1.txt");
+        let m2 = dir.path().join("dep2.txt");
+        let out = dir.path().join("main_out.txt");
+        let cfg = load_config(
+            &dir,
+            &format!(
+                r#"
+[tasks.dep1]
+run = "touch {}"
+
+[tasks.dep2]
+run = "touch {}"
+
+[tasks.main]
+depends = ["dep1", "dep2"]
+run = "test -f {} && test -f {} && touch {}"
+"#,
+                m1.display(),
+                m2.display(),
+                m1.display(),
+                m2.display(),
+                out.display()
+            ),
+        );
+        runner::run_task(&cfg, "main", dir.path(), false).unwrap();
+        assert!(m1.exists());
+        assert!(m2.exists());
+        assert!(out.exists());
+    }
+
+    #[test]
+    fn depends_group_task() {
+        let dir = TempDir::new().unwrap();
+        let marker = dir.path().join("grp_dep.txt");
+        let out = dir.path().join("main_out.txt");
+        let cfg = load_config(
+            &dir,
+            &format!(
+                r#"
+[tasks.main]
+depends = ["ui.build"]
+run = "test -f {} && touch {}"
+
+[taskgroup.ui.build]
+run = "touch {}"
+"#,
+                marker.display(),
+                out.display(),
+                marker.display()
+            ),
+        );
+        runner::run_task(&cfg, "main", dir.path(), false).unwrap();
+        assert!(marker.exists());
+        assert!(out.exists());
+    }
+
+    #[test]
+    fn depends_shared_dep_runs_once() {
+        let dir = TempDir::new().unwrap();
+        let counter = dir.path().join("counter.txt");
+        // setup appends "x" to counter file; both a and b depend on setup
+        // If dedup works, counter should contain exactly one "x"
+        let cfg = load_config(
+            &dir,
+            &format!(
+                r#"
+[tasks.setup]
+run = "printf x >> {}"
+
+[tasks.a]
+depends = "setup"
+run = "echo a"
+
+[tasks.b]
+depends = "setup"
+run = "echo b"
+
+[tasks.all]
+run_serial = ["plz:a", "plz:b"]
+"#,
+                counter.display()
+            ),
+        );
+        runner::run_task(&cfg, "all", dir.path(), false).unwrap();
+        let content = fs::read_to_string(&counter).unwrap();
+        assert_eq!(content, "x", "setup should run only once, got: {content}");
     }
 
     #[test]

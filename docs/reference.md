@@ -91,6 +91,36 @@ Reference group tasks with `plz:group:task`:
 run_parallel = ["plz:ui:build", "plz:api:build"]
 ```
 
+### Dependencies
+
+Declare prerequisite tasks with `depends`. Dependencies run before the task, in order. Shared dependencies across tasks only run once per invocation.
+
+```toml
+[tasks.build]
+run = "cargo build"
+
+[tasks.test]
+depends = "build"
+run = "cargo test"
+
+[tasks.deploy]
+depends = ["build", "lint"]
+run = "deploy.sh"
+```
+
+Use dot notation for group task dependencies:
+
+```toml
+[tasks.serve]
+depends = ["ui.build"]
+run = "python -m http.server"
+
+[taskgroup.ui.build]
+run = "pnpm build"
+```
+
+Circular dependencies are detected at config load time.
+
 ### Working directory
 
 ```toml

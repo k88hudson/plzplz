@@ -1,9 +1,9 @@
 use anyhow::{Context, Result, bail};
 use schemars::{JsonSchema, SchemaGenerator, json_schema};
 use serde::Deserialize;
-use serde::de::{self, Deserializer, Visitor};
+use serde::de::{self, Deserializer, SeqAccess, Visitor};
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::Path;
 use toml_edit::DocumentMut;
@@ -114,6 +114,62 @@ pub struct PlzConfig {
     pub tasks: HashMap<String, Task>,
 }
 
+#[derive(Debug, Clone)]
+pub struct StringOrVec(pub Vec<String>);
+
+impl<'de> Deserialize<'de> for StringOrVec {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct StringOrVecVisitor;
+
+        impl<'de> Visitor<'de> for StringOrVecVisitor {
+            type Value = StringOrVec;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a string or array of strings")
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> std::result::Result<StringOrVec, E> {
+                Ok(StringOrVec(vec![v.to_string()]))
+            }
+
+            fn visit_seq<S: SeqAccess<'de>>(
+                self,
+                mut seq: S,
+            ) -> std::result::Result<StringOrVec, S::Error> {
+                let mut vec = Vec::new();
+                while let Some(item) = seq.next_element::<String>()? {
+                    vec.push(item);
+                }
+                Ok(StringOrVec(vec))
+            }
+        }
+
+        deserializer.deserialize_any(StringOrVecVisitor)
+    }
+}
+
+impl JsonSchema for StringOrVec {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("StringOrVec")
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> schemars::Schema {
+        json_schema!({
+            "oneOf": [
+                { "type": "string" },
+                { "type": "array", "items": { "type": "string" } }
+            ]
+        })
+    }
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct Task {
     /// A single shell command to run
@@ -125,6 +181,9 @@ pub struct Task {
     /// Multiple commands to run concurrently
     #[serde(default)]
     pub run_parallel: Option<Vec<String>>,
+    /// Prerequisite tasks to run before this task. Use dot notation for group tasks (e.g. "group.task").
+    #[serde(default)]
+    pub depends: Option<StringOrVec>,
     /// Tool environment wrapper: "pnpm" (uses `pnpm exec`), "npm" (uses `npx`), "uv" (uses `uv run`), or "uvx" (uses `uvx`)
     #[serde(default, rename = "env")]
     #[schemars(rename = "env")]
@@ -373,7 +432,113 @@ pub fn load(path: &Path) -> Result<PlzConfig> {
         }
     }
 
+    // Validate depends references exist
+    validate_depends(&config)?;
+
+    // Detect circular dependencies
+    detect_cycles(&config)?;
+
     Ok(config)
+}
+
+fn resolve_dep_ref(config: &PlzConfig, dep: &str) -> bool {
+    if let Some((group, task)) = dep.split_once('.') {
+        config.get_group_task(group, task).is_some()
+    } else {
+        config.tasks.contains_key(dep)
+    }
+}
+
+fn validate_depends(config: &PlzConfig) -> Result<()> {
+    for (name, task) in &config.tasks {
+        if let Some(ref deps) = task.depends {
+            for dep in &deps.0 {
+                if !resolve_dep_ref(config, dep) {
+                    bail!("Task \"{name}\" has depends \"{dep}\", but no task \"{dep}\" exists");
+                }
+            }
+        }
+    }
+    if let Some(ref groups) = config.taskgroup {
+        for (group_name, group) in groups {
+            for (task_name, task) in &group.tasks {
+                if let Some(ref deps) = task.depends {
+                    for dep in &deps.0 {
+                        if !resolve_dep_ref(config, dep) {
+                            bail!(
+                                "Task \"{group_name}.{task_name}\" has depends \"{dep}\", but no task \"{dep}\" exists"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn detect_cycles(config: &PlzConfig) -> Result<()> {
+    // Build adjacency list: node_id -> [dep_ids]
+    // node_id for top-level: task_name, for group: "group.task"
+    let mut adj: HashMap<String, Vec<String>> = HashMap::new();
+
+    for (name, task) in &config.tasks {
+        if let Some(ref deps) = task.depends {
+            adj.insert(name.clone(), deps.0.clone());
+        }
+    }
+    if let Some(ref groups) = config.taskgroup {
+        for (group_name, group) in groups {
+            for (task_name, task) in &group.tasks {
+                if let Some(ref deps) = task.depends {
+                    let key = format!("{group_name}.{task_name}");
+                    adj.insert(key, deps.0.clone());
+                }
+            }
+        }
+    }
+
+    let mut visited = HashSet::new();
+    let mut in_stack = HashSet::new();
+    let mut path = Vec::new();
+
+    for node in adj.keys() {
+        if !visited.contains(node) {
+            dfs_cycle(node, &adj, &mut visited, &mut in_stack, &mut path)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn dfs_cycle(
+    node: &str,
+    adj: &HashMap<String, Vec<String>>,
+    visited: &mut HashSet<String>,
+    in_stack: &mut HashSet<String>,
+    path: &mut Vec<String>,
+) -> Result<()> {
+    visited.insert(node.to_string());
+    in_stack.insert(node.to_string());
+    path.push(node.to_string());
+
+    if let Some(deps) = adj.get(node) {
+        for dep in deps {
+            if in_stack.contains(dep) {
+                path.push(dep.clone());
+                let cycle_start = path.iter().position(|n| n == dep).unwrap();
+                let cycle = path[cycle_start..].join(" → ");
+                bail!("Circular dependency: {cycle}");
+            }
+            if !visited.contains(dep) {
+                dfs_cycle(dep, adj, visited, in_stack, path)?;
+            }
+        }
+    }
+
+    path.pop();
+    in_stack.remove(node);
+    Ok(())
 }
 
 impl PlzConfig {

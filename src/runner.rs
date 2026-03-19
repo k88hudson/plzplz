@@ -1,7 +1,16 @@
 use crate::config::{FailHook, PlzConfig, Task};
 use anyhow::{Result, bail};
+use std::cell::RefCell;
+use std::collections::HashSet;
 use std::path::Path;
 use std::process::Command;
+use std::rc::Rc;
+
+type CompletedDeps = Rc<RefCell<HashSet<String>>>;
+
+fn new_completed_deps() -> CompletedDeps {
+    Rc::new(RefCell::new(HashSet::new()))
+}
 
 enum TaskRef {
     TopLevel(String),
@@ -44,7 +53,16 @@ pub fn run_task(
     let task = config.tasks.get(task_name).ok_or_else(|| {
         anyhow::anyhow!("\"{task_name}\" isn't a task. Run `plz` to see all commands.")
     })?;
-    run_task_core(config, task, task_name, base_dir, interactive, true, &[])
+    run_task_core(
+        config,
+        task,
+        task_name,
+        base_dir,
+        interactive,
+        true,
+        &[],
+        &new_completed_deps(),
+    )
 }
 
 pub fn run_task_with_args(
@@ -65,6 +83,7 @@ pub fn run_task_with_args(
         interactive,
         true,
         extra_args,
+        &new_completed_deps(),
     )
 }
 
@@ -81,7 +100,16 @@ pub fn run_group_task(
         )
     })?;
     let display = format!("{group_name}:{task_name}");
-    run_task_core(config, task, &display, base_dir, interactive, true, &[])
+    run_task_core(
+        config,
+        task,
+        &display,
+        base_dir,
+        interactive,
+        true,
+        &[],
+        &new_completed_deps(),
+    )
 }
 
 pub fn run_group_task_with_args(
@@ -106,7 +134,79 @@ pub fn run_group_task_with_args(
         interactive,
         true,
         extra_args,
+        &new_completed_deps(),
     )
+}
+
+fn run_dep_task(
+    config: &PlzConfig,
+    task_name: &str,
+    base_dir: &Path,
+    interactive: bool,
+    completed: &CompletedDeps,
+) -> Result<()> {
+    let task = config.tasks.get(task_name).ok_or_else(|| {
+        anyhow::anyhow!("\"{task_name}\" isn't a task. Run `plz` to see all commands.")
+    })?;
+    run_task_core(
+        config,
+        task,
+        task_name,
+        base_dir,
+        interactive,
+        true,
+        &[],
+        completed,
+    )
+}
+
+fn run_dep_group_task(
+    config: &PlzConfig,
+    group_name: &str,
+    task_name: &str,
+    base_dir: &Path,
+    interactive: bool,
+    completed: &CompletedDeps,
+) -> Result<()> {
+    let task = config.get_group_task(group_name, task_name).ok_or_else(|| {
+        anyhow::anyhow!(
+            "\"{group_name}:{task_name}\" isn't a task. Run `plz {group_name}` to see group tasks."
+        )
+    })?;
+    let display = format!("{group_name}:{task_name}");
+    run_task_core(
+        config,
+        task,
+        &display,
+        base_dir,
+        interactive,
+        true,
+        &[],
+        completed,
+    )
+}
+
+fn run_dependencies(
+    config: &PlzConfig,
+    task: &Task,
+    base_dir: &Path,
+    interactive: bool,
+    completed: &CompletedDeps,
+) -> Result<()> {
+    if let Some(ref deps) = task.depends {
+        for dep in &deps.0 {
+            if completed.borrow().contains(dep) {
+                continue;
+            }
+            if let Some((group, task_name)) = dep.split_once('.') {
+                run_dep_group_task(config, group, task_name, base_dir, interactive, completed)?;
+            } else {
+                run_dep_task(config, dep, base_dir, interactive, completed)?;
+            }
+            completed.borrow_mut().insert(dep.clone());
+        }
+    }
+    Ok(())
 }
 
 fn run_task_core(
@@ -117,7 +217,10 @@ fn run_task_core(
     interactive: bool,
     run_hooks: bool,
     extra_args: &[String],
+    completed: &CompletedDeps,
 ) -> Result<()> {
+    run_dependencies(config, task, base_dir, interactive, completed)?;
+
     let work_dir = match &task.dir {
         Some(d) => base_dir.join(d),
         None => base_dir.to_path_buf(),
@@ -148,15 +251,38 @@ fn run_task_core(
                     .map_err(|e| anyhow::anyhow!("Failed to escape arguments: {e}"))?;
                 format!("{} {args_str}", wrap(cmd))
             };
-            run_command_or_ref(config, &wrapped, &work_dir, base_dir, interactive)?;
+            run_command_or_ref(
+                config,
+                &wrapped,
+                &work_dir,
+                base_dir,
+                interactive,
+                completed,
+            )?;
         }
 
         if let Some(ref cmds) = task.run_serial {
-            run_serial_commands(config, cmds, &wrap, &work_dir, base_dir, interactive)?;
+            run_serial_commands(
+                config,
+                cmds,
+                &wrap,
+                &work_dir,
+                base_dir,
+                interactive,
+                completed,
+            )?;
         }
 
         if let Some(ref cmds) = task.run_parallel {
-            run_parallel_commands(config, cmds, &wrap, &work_dir, base_dir, interactive)?;
+            run_parallel_commands(
+                config,
+                cmds,
+                &wrap,
+                &work_dir,
+                base_dir,
+                interactive,
+                completed,
+            )?;
         }
 
         Ok(())
@@ -181,6 +307,7 @@ fn run_ref_task(
     base_dir: &Path,
     interactive: bool,
     run_hooks: bool,
+    completed: &CompletedDeps,
 ) -> Result<()> {
     let (task, display) = resolve_task_ref(config, task_ref)?;
     run_task_core(
@@ -191,6 +318,7 @@ fn run_ref_task(
         interactive,
         run_hooks,
         &[],
+        completed,
     )
 }
 
@@ -200,9 +328,10 @@ fn run_command_or_ref(
     work_dir: &Path,
     base_dir: &Path,
     interactive: bool,
+    completed: &CompletedDeps,
 ) -> Result<()> {
     if let Some(task_ref) = parse_task_ref(cmd) {
-        return run_ref_task(config, &task_ref, base_dir, interactive, true);
+        return run_ref_task(config, &task_ref, base_dir, interactive, true, completed);
     }
     exec_shell(cmd, work_dir)
 }
@@ -304,6 +433,7 @@ fn run_serial_commands(
     work_dir: &Path,
     base_dir: &Path,
     interactive: bool,
+    completed: &CompletedDeps,
 ) -> Result<()> {
     let mut task_results: Vec<(String, bool)> = Vec::new();
     let mut failures: Vec<DeferredFailure> = Vec::new();
@@ -315,7 +445,7 @@ fn run_serial_commands(
                 TaskRef::TopLevel(n) => n.clone(),
                 TaskRef::Group(g, t) => format!("{g}:{t}"),
             };
-            match run_ref_task(config, &task_ref, base_dir, interactive, false) {
+            match run_ref_task(config, &task_ref, base_dir, interactive, false, completed) {
                 Ok(()) => task_results.push((display, true)),
                 Err(e) => {
                     task_results.push((display.clone(), false));
@@ -347,6 +477,7 @@ fn run_parallel_commands(
     work_dir: &Path,
     base_dir: &Path,
     interactive: bool,
+    completed: &CompletedDeps,
 ) -> Result<()> {
     let mut children = Vec::new();
     let mut plz_refs: Vec<TaskRef> = Vec::new();
@@ -375,7 +506,7 @@ fn run_parallel_commands(
             TaskRef::TopLevel(n) => n.clone(),
             TaskRef::Group(g, t) => format!("{g}:{t}"),
         };
-        match run_ref_task(config, task_ref, base_dir, interactive, false) {
+        match run_ref_task(config, task_ref, base_dir, interactive, false, completed) {
             Ok(()) => task_results.push((display, true)),
             Err(e) => {
                 task_results.push((display.clone(), false));
