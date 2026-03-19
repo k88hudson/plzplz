@@ -66,13 +66,6 @@ pub fn file_str_is_ignored(content: &str, rule: &str) -> bool {
         .is_some_and(|l| has_ignore(l, IGNORE_FILE_MARKER, rule))
 }
 
-fn memchr_find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    if needle.is_empty() || needle.len() > haystack.len() {
-        return None;
-    }
-    haystack.windows(needle.len()).position(|w| w == needle)
-}
-
 pub fn collect_files(base_dir: &Path) -> Result<Vec<FileEntry>> {
     let output = Command::new("git")
         .args(["ls-files", "-z"])

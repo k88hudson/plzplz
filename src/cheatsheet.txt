@@ -1,0 +1,87 @@
+## Basic task
+[tasks.build]
+run = "cargo build"
+
+## Description (comment)
+# Build the project
+[tasks.build]
+run = "cargo build"
+
+## Description (explicit)
+[tasks.build]
+run = "cargo build"
+description = "Build the project"
+
+## Serial execution
+[tasks.fix]
+run_serial = ["cargo fmt", "cargo clippy --fix --allow-dirty"]
+
+## Parallel execution
+[tasks.check]
+run_parallel = ["plz lint", "plz format"]
+
+## Task references
+[tasks.check]
+run_parallel = ["plz:lint", "plz:format"]
+
+## Group task references | plz:group:task
+[tasks.all]
+run_parallel = ["plz:ui:build", "plz:api:build"]
+
+## Working directory
+[tasks.frontend]
+dir = "packages/web"
+run = "pnpm dev"
+
+## Environment wrappers | pnpm | npm | uv | uvx
+[tasks.vitest]
+run = "vitest"
+tool_env = "pnpm"
+
+## Failure hooks
+# suggest a fix command
+fail_hook = { suggest_command = "cargo fmt" }
+# show a message
+fail_hook = { message = "Check the logs" }
+# run a command
+fail_hook = "notify-send 'Tests failed'"
+
+## Git hooks | pre-commit | pre-push | commit-msg | post-commit | post-merge | post-checkout
+[tasks.check]
+run_parallel = ["plz:lint", "plz:format"]
+git_hook = "pre-commit"
+
+## Extends (global defaults)
+[extends]
+env = { NODE_ENV = "production" }
+dir = "packages/app"
+
+## Task groups
+[taskgroup.docs.build]
+run = "pnpm docs:build"
+
+[taskgroup.docs.dev]
+run = "pnpm docs:dev"
+
+## Run as array | equivalent to run_serial
+[tasks.fix]
+run = ["cargo fmt", "cargo clippy --fix --allow-dirty"]
+
+## Dependencies | string or array, dot notation for groups
+[tasks.test]
+depends = "build"
+run = "cargo test"
+
+[tasks.deploy]
+depends = ["build", "lint"]
+run = "deploy.sh"
+
+# group task dependency
+[tasks.serve]
+depends = ["ui.build"]
+run = "python -m http.server"
+
+## Hidden tasks | hidden from pickers, still runnable
+[tasks.setup]
+run = "echo setting up"
+hide = true
