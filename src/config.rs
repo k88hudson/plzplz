@@ -200,6 +200,9 @@ pub struct Task {
     /// Git hook stage to associate this task with (e.g. "pre-commit", "pre-push")
     #[serde(default)]
     pub git_hook: Option<String>,
+    /// Hide this task from interactive pickers and listings
+    #[serde(default)]
+    pub hide: bool,
 }
 
 #[derive(Debug)]

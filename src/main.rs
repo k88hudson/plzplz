@@ -191,6 +191,9 @@ fn all_task_entries(config: &config::PlzConfig) -> Vec<(String, ResolvedTask)> {
     let mut names: Vec<&String> = config.tasks.keys().collect();
     names.sort();
     for name in &names {
+        if config.tasks[name.as_str()].hide {
+            continue;
+        }
         entries.push((name.to_string(), ResolvedTask::Task(name.to_string())));
     }
     if let Some(ref groups) = config.taskgroup {
@@ -201,6 +204,9 @@ fn all_task_entries(config: &config::PlzConfig) -> Vec<(String, ResolvedTask)> {
             let mut task_names: Vec<&String> = group.tasks.keys().collect();
             task_names.sort();
             for tname in task_names {
+                if group.tasks[tname.as_str()].hide {
+                    continue;
+                }
                 entries.push((
                     format!("{gname}:{tname}"),
                     ResolvedTask::GroupTask(gname.clone(), tname.clone()),
@@ -553,7 +559,11 @@ fn resolve_task(
                 bail!(
                     "No task specified for group \"{input}\". Available tasks: {}",
                     {
-                        let mut names: Vec<&String> = group.tasks.keys().collect();
+                        let mut names: Vec<&String> = group
+                            .tasks
+                            .keys()
+                            .filter(|n| !group.tasks[n.as_str()].hide)
+                            .collect();
                         names.sort();
                         names
                             .iter()
@@ -563,7 +573,11 @@ fn resolve_task(
                     }
                 );
             }
-            let mut names: Vec<&String> = group.tasks.keys().collect();
+            let mut names: Vec<&String> = group
+                .tasks
+                .keys()
+                .filter(|n| !group.tasks[n.as_str()].hide)
+                .collect();
             names.sort();
             if names.is_empty() {
                 bail!("No tasks defined in group \"{input}\"");

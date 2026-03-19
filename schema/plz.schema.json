@@ -152,6 +152,11 @@
           ],
           "default": null
         },
+        "hide": {
+          "description": "Hide this task from interactive pickers and listings",
+          "type": "boolean",
+          "default": false
+        },
         "run": {
           "description": "A shell command (or list of commands to run serially) to run",
           "anyOf": [

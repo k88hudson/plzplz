@@ -148,6 +148,16 @@ tool_env = "pnpm"
 
 Supported values: `pnpm` (uses `pnpm exec`), `npm` (uses `npx`), `uv` (uses `uv run`), `uvx` (uses `uvx`).
 
+### Hidden tasks
+
+Hide a task from the interactive picker and listings. The task can still be run directly or used as a dependency:
+
+```toml
+[tasks.setup]
+run = "echo setting up"
+hide = true
+```
+
 ### Failure hooks
 
 Suggest a command for the user to run:
