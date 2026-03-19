@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.15](https://github.com/k88hudson/plzplz/compare/v0.0.14...v0.0.15) - 2026-03-19
+
+### Added
+
+- added hide flag for hiding tasks
+- run supports an array of commands
+- added depends
+
+### Other
+
+- update cheatsheet with new examples
+
 ## [0.0.14](https://github.com/k88hudson/plzplz/compare/v0.0.13...v0.0.14) - 2026-03-10
 
 ### Fixed
