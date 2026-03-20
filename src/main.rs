@@ -324,6 +324,7 @@ fn main() -> Result<()> {
                 let config_path =
                     find_config().ok_or_else(|| anyhow::anyhow!("No plz.toml found"))?;
                 let config = config::load(&config_path)?;
+                config.check_version();
                 let base_dir = config_path.parent().unwrap().to_path_buf();
                 let interactive = is_interactive(&cli);
                 match hook_command {
@@ -364,6 +365,7 @@ fn main() -> Result<()> {
         }
     };
     let config = config::load(&config_path)?;
+    config.check_version();
     let base_dir = config_path.parent().unwrap().to_path_buf();
 
     if cli.task.is_empty() {
@@ -509,6 +511,7 @@ fn try_plz_subcommand(task: &[String]) -> Option<Result<()>> {
                 Ok(c) => c,
                 Err(e) => return Some(Err(e)),
             };
+            config.check_version();
             let base_dir = config_path.parent().unwrap().to_path_buf();
             let sub = task.get(1).map(|s| s.as_str());
             let interactive = !is_ci::cached()

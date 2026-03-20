@@ -1221,6 +1221,7 @@ dependencies = [
  "predicates",
  "rustls",
  "schemars",
+ "semver",
  "serde",
  "serde_json",
  "shlex",

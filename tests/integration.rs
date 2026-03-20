@@ -731,6 +731,56 @@ run = "echo build"
     }
 
     #[test]
+    fn parse_plz_section_with_version() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[plz]
+version = ">=0.0.1"
+
+[tasks.hello]
+run = "echo hello"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        assert_eq!(
+            cfg.plz.as_ref().unwrap().version.as_deref(),
+            Some(">=0.0.1")
+        );
+    }
+
+    #[test]
+    fn parse_plz_section_without_version() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[plz]
+
+[tasks.hello]
+run = "echo hello"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        assert!(cfg.plz.as_ref().unwrap().version.is_none());
+    }
+
+    #[test]
+    fn parse_no_plz_section() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.hello]
+run = "echo hello"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        assert!(cfg.plz.is_none());
+    }
+
+    #[test]
     fn parse_invalid_toml_errors() {
         let dir = TempDir::new().unwrap();
         let path = write_config(&dir, "this is not valid toml [[[");
@@ -2321,6 +2371,98 @@ git_hook = "pre-commit"
         let content = fs::read_to_string(dir.path().join("plz.toml")).unwrap();
         assert!(content.contains("[tasks.hello]"));
         assert!(content.contains("echo 'hello world'"));
+    }
+
+    #[test]
+    fn cli_version_mismatch_shows_warning() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("plz.toml"),
+            r#"
+[plz]
+version = ">=99.0.0"
+
+[tasks.hello]
+run = "echo hello"
+"#,
+        )
+        .unwrap();
+
+        plz()
+            .arg("hello")
+            .current_dir(dir.path())
+            .assert()
+            .success()
+            .stderr(predicate::str::contains(
+                "does not match version requirement",
+            ));
+    }
+
+    #[test]
+    fn cli_version_match_no_warning() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("plz.toml"),
+            r#"
+[plz]
+version = ">=0.0.1"
+
+[tasks.hello]
+run = "echo hello"
+"#,
+        )
+        .unwrap();
+
+        plz()
+            .arg("hello")
+            .current_dir(dir.path())
+            .assert()
+            .success()
+            .stderr(predicate::str::contains("does not match").not());
+    }
+
+    #[test]
+    fn cli_version_invalid_semver_shows_warning() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("plz.toml"),
+            r#"
+[plz]
+version = "not-semver!!!"
+
+[tasks.hello]
+run = "echo hello"
+"#,
+        )
+        .unwrap();
+
+        plz()
+            .arg("hello")
+            .current_dir(dir.path())
+            .assert()
+            .success()
+            .stderr(predicate::str::contains("not a valid semver requirement"));
+    }
+
+    #[test]
+    fn cli_no_version_no_warning() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("plz.toml"),
+            r#"
+[tasks.hello]
+run = "echo hello"
+"#,
+        )
+        .unwrap();
+
+        plz()
+            .arg("hello")
+            .current_dir(dir.path())
+            .assert()
+            .success()
+            .stderr(predicate::str::contains("does not match").not())
+            .stderr(predicate::str::contains("not a valid semver").not());
     }
 }
 

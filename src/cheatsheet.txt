@@ -1,3 +1,7 @@
+## Version requirement | warns if plz version doesn't match
+[plz]
+version = ">=0.1.0"
+
 ## Basic task
 [tasks.build]
 run = "cargo build"

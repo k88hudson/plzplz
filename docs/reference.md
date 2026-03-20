@@ -34,6 +34,17 @@ for the TOML schema.
 
 Tasks are defined in `plz.toml` (or `.plz.toml`) at your project root.
 
+### Version requirement
+
+Require a minimum version of plz for your project. If the running version doesn't match, a warning is displayed:
+
+```toml
+[plz]
+version = ">=0.1.0"
+```
+
+The value is a [semver version requirement](https://docs.rs/semver/latest/semver/struct.VersionReq.html) (e.g. `">=0.1.0"`, `"^0.2"`, `"~1.0"`).
+
 ### Basic task
 
 ```toml

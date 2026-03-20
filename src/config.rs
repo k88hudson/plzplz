@@ -101,8 +101,18 @@ impl JsonSchema for TaskGroup {
     }
 }
 
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct PlzSection {
+    /// Semver version requirement for plz (e.g. ">=0.1.0", "^0.2")
+    #[serde(default)]
+    pub version: Option<String>,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct PlzConfig {
+    /// plz tool settings (e.g. required version)
+    #[serde(default)]
+    pub plz: Option<PlzSection>,
     /// Global defaults that apply to all tasks (can be overridden per-task)
     #[serde(default)]
     pub extends: Option<GlobalSettings>,
@@ -551,6 +561,28 @@ impl PlzConfig {
 
     pub fn get_group_task(&self, group: &str, task: &str) -> Option<&Task> {
         self.get_group(group)?.tasks.get(task)
+    }
+
+    pub fn check_version(&self) {
+        let req_str = match self.plz.as_ref().and_then(|p| p.version.as_deref()) {
+            Some(v) => v,
+            None => return,
+        };
+        let current = env!("CARGO_PKG_VERSION");
+        let Ok(version) = semver::Version::parse(current) else {
+            return;
+        };
+        let Ok(req) = semver::VersionReq::parse(req_str) else {
+            eprintln!(
+                "\x1b[33mwarning:\x1b[0m [plz] version \"{req_str}\" is not a valid semver requirement"
+            );
+            return;
+        };
+        if !req.matches(&version) {
+            eprintln!(
+                "\x1b[33mwarning:\x1b[0m plz {current} does not match version requirement \"{req_str}\" in plz.toml. Run `plz update` to update."
+            );
+        }
     }
 }
 

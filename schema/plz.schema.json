@@ -14,6 +14,17 @@
         }
       ]
     },
+    "plz": {
+      "description": "plz tool settings (e.g. required version)",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PlzSection"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "taskgroup": {
       "description": "Task groups for namespacing related tasks (e.g. [taskgroup.rust.test])",
       "type": [
@@ -46,6 +57,19 @@
         },
         "env": {
           "description": "Tool environment wrapper applied to all tasks: \"pnpm\", \"npm\", \"uv\", or \"uvx\"",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      }
+    },
+    "PlzSection": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "description": "Semver version requirement for plz (e.g. \">=0.1.0\", \"^0.2\")",
           "type": [
             "string",
             "null"
