@@ -15,6 +15,21 @@ jobs:
       contents: write
       id-token: write
     steps:
+      - &check-token
+        name: Validate RELEASE_PLZ_TOKEN
+        env:
+          TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::RELEASE_PLZ_TOKEN secret is not set. Add it in repo Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          response=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" https://api.github.com/repos/${{ github.repository }})
+          if [ "$response" != "200" ]; then
+            echo "::error::RELEASE_PLZ_TOKEN is invalid or expired (HTTP $response). Regenerate it at GitHub Settings > Developer settings > Personal access tokens and update the repo secret."
+            exit 1
+          fi
+        shell: bash
       - &checkout
         name: Checkout repository
         uses: actions/checkout@v6
@@ -43,6 +58,7 @@ jobs:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
     steps:
+      - *check-token
       - *checkout
       - *install-rust
       - name: Run release-plz
