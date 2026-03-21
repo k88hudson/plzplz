@@ -5,6 +5,7 @@ mod init;
 mod runner;
 mod settings;
 mod templates;
+mod update_check;
 mod utils;
 
 use anyhow::{Result, bail};
@@ -389,6 +390,7 @@ fn main() -> Result<()> {
                     }
                 }
                 hooks::hint_uninstalled_hooks(&config, &base_dir);
+                update_check::maybe_print_update_hint();
                 return Ok(());
             }
             None => {
@@ -431,6 +433,7 @@ fn main() -> Result<()> {
         }
     }
     hooks::hint_uninstalled_hooks(&config, &base_dir);
+    update_check::maybe_print_update_hint();
 
     Ok(())
 }

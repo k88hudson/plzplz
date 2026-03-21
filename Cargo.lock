@@ -1226,6 +1226,7 @@ dependencies = [
  "serde_json",
  "shlex",
  "tempfile",
+ "tokio",
  "toml_edit",
 ]
 

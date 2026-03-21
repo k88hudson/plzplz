@@ -7,20 +7,31 @@ pub struct SettingEntry {
     pub default: bool,
 }
 
-pub const ALL_SETTINGS: &[SettingEntry] = &[SettingEntry {
-    key: "show_hints",
-    description: "Show helpful tips and suggestions",
-    default: true,
-}];
+pub const ALL_SETTINGS: &[SettingEntry] = &[
+    SettingEntry {
+        key: "show_hints",
+        description: "Show helpful tips and suggestions",
+        default: true,
+    },
+    SettingEntry {
+        key: "check_for_updates",
+        description: "Periodically check for new versions",
+        default: true,
+    },
+];
 
 #[derive(Debug)]
 pub struct Settings {
     pub show_hints: bool,
+    pub check_for_updates: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { show_hints: true }
+        Self {
+            show_hints: true,
+            check_for_updates: false,
+        }
     }
 }
 
@@ -89,7 +100,15 @@ pub fn load_from(path: &Path) -> Settings {
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
 
-    Settings { show_hints }
+    let check_for_updates = doc
+        .get("check_for_updates")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+
+    Settings {
+        show_hints,
+        check_for_updates,
+    }
 }
 
 #[cfg(test)]

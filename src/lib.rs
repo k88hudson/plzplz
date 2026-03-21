@@ -5,4 +5,5 @@ pub mod init;
 pub mod runner;
 pub mod settings;
 pub mod templates;
+pub mod update_check;
 pub mod utils;

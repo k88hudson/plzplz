@@ -259,6 +259,21 @@ run = "pnpm build"
 # inherits CI=true from top-level, dir=docs from group
 ```
 
+## Settings
+
+User settings are stored in `~/.plz/settings.toml`. Run `plz plz` to set up the config directory.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `show_hints` | `true` | Show helpful tips and suggestions |
+| `check_for_updates` | `false` | Periodically check for new versions (every 7 days) |
+
+To enable update checks:
+
+```toml
+check_for_updates = true
+```
+
 ## Healthcheck
 
 `plz healthcheck` runs Rust-native code health checks on any git repo. No `plz.toml` required.

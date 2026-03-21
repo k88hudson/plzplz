@@ -569,7 +569,7 @@ pub fn setup() -> Result<()> {
     }
 
     if !settings_path.exists() {
-        let content = "# show_hints = true\n";
+        let content = "# show_hints = true\n# check_for_updates = false\n";
         let _ = std::fs::write(&settings_path, content);
     }
 
