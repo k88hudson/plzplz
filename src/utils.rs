@@ -85,7 +85,13 @@ pub fn multiselect(
         loop {
             prev_lines = render(items, cursor, prev_lines)?;
 
-            if let event::Event::Key(key) = event::read()? {
+            let key = loop {
+                if let event::Event::Key(key) = event::read()? {
+                    break key;
+                }
+            };
+
+            {
                 use event::{KeyCode, KeyModifiers};
                 match key.code {
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -220,7 +226,13 @@ pub fn pick_from_list(items: &[PickItem], footer_hint: &str) -> Result<Option<us
             out.flush()?;
             prev_lines = lines;
 
-            if let event::Event::Key(key) = event::read()? {
+            let key = loop {
+                if let event::Event::Key(key) = event::read()? {
+                    break key;
+                }
+            };
+
+            {
                 use event::{KeyCode, KeyModifiers};
                 match key.code {
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
