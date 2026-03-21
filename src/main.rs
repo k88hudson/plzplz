@@ -96,11 +96,9 @@ fn is_interactive(cli: &Cli) -> bool {
         return false;
     }
     if is_ci::cached() {
-        eprintln!("Skipping interactive prompts: CI environment detected");
         return false;
     }
     if !std::io::stdin().is_terminal() {
-        eprintln!("Skipping interactive prompts: stdin is not a terminal");
         return false;
     }
     true
