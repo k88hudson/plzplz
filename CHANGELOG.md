@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.16](https://github.com/k88hudson/plzplz/compare/v0.0.15...v0.0.16) - 2026-03-21
+
+### Added
+
+- add update check
+
+### Other
+
+- add token checking
+
 ## [0.0.15](https://github.com/k88hudson/plzplz/compare/v0.0.14...v0.0.15) - 2026-03-19
 
 ### Added
