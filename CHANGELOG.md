@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.17](https://github.com/k88hudson/plzplz/compare/v0.0.16...v0.0.17) - 2026-03-22
+
+### Added
+
+- added vars support for custom variables
+
+### Fixed
+
+- minor rendering bug in multiselect
+
+### Other
+
+- remove noisy skipping interactive prompts messages
+
 ## [0.0.16](https://github.com/k88hudson/plzplz/compare/v0.0.15...v0.0.16) - 2026-03-21
 
 ### Added
