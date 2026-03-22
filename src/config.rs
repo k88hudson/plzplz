@@ -44,6 +44,7 @@ pub struct GlobalSettings {
 #[derive(Debug)]
 pub struct TaskGroup {
     pub extends: Option<GlobalSettings>,
+    pub vars: Option<HashMap<String, String>>,
     pub tasks: HashMap<String, Task>,
 }
 
@@ -66,17 +67,24 @@ impl<'de> Deserialize<'de> for TaskGroup {
                 M: de::MapAccess<'de>,
             {
                 let mut extends = None;
+                let mut vars = None;
                 let mut tasks = HashMap::new();
 
                 while let Some(key) = map.next_key::<String>()? {
                     if key == "extends" {
                         extends = Some(map.next_value::<GlobalSettings>()?);
+                    } else if key == "vars" {
+                        vars = Some(map.next_value::<HashMap<String, String>>()?);
                     } else {
                         tasks.insert(key, map.next_value::<Task>()?);
                     }
                 }
 
-                Ok(TaskGroup { extends, tasks })
+                Ok(TaskGroup {
+                    extends,
+                    vars,
+                    tasks,
+                })
             }
         }
 
@@ -94,7 +102,12 @@ impl JsonSchema for TaskGroup {
             "type": "object",
             "description": "A group of related tasks with optional shared defaults",
             "properties": {
-                "extends": generator.subschema_for::<GlobalSettings>()
+                "extends": generator.subschema_for::<GlobalSettings>(),
+                "vars": {
+                    "type": "object",
+                    "description": "Variables for {{key}} substitution in task commands within this group",
+                    "additionalProperties": { "type": "string" }
+                }
             },
             "additionalProperties": generator.subschema_for::<Task>()
         })
@@ -119,6 +132,9 @@ pub struct PlzConfig {
     /// Task groups for namespacing related tasks (e.g. [taskgroup.rust.test])
     #[serde(default)]
     pub taskgroup: Option<HashMap<String, TaskGroup>>,
+    /// Variables for {{key}} substitution in task commands
+    #[serde(default)]
+    pub vars: Option<HashMap<String, String>>,
     /// Tasks to run, keyed by name (e.g. [tasks.build]). Run with `plz <name>`.
     #[serde(default)]
     pub tasks: HashMap<String, Task>,
@@ -314,6 +330,42 @@ impl<'de> Deserialize<'de> for FailHook {
     }
 }
 
+fn substitute_vars(input: &str, vars: &HashMap<String, String>) -> Result<String> {
+    let mut result = input.to_string();
+    let mut keys: Vec<&String> = vars.keys().collect();
+    keys.sort();
+    for key in keys {
+        result = result.replace(&format!("{{{{{key}}}}}"), &vars[key]);
+    }
+    // Check for unresolved {{...}} patterns
+    if let Some(start) = result.find("{{") {
+        if let Some(end) = result[start + 2..].find("}}") {
+            let unresolved = &result[start + 2..start + 2 + end];
+            bail!("Unresolved variable \"{{{{{unresolved}}}}}\"");
+        }
+    }
+    Ok(result)
+}
+
+fn substitute_task_vars(task: &mut Task, vars: &HashMap<String, String>) -> Result<()> {
+    if let Some(ref mut run) = task.run {
+        for cmd in &mut run.0 {
+            *cmd = substitute_vars(cmd, vars)?;
+        }
+    }
+    if let Some(ref mut cmds) = task.run_serial {
+        for cmd in cmds {
+            *cmd = substitute_vars(cmd, vars)?;
+        }
+    }
+    if let Some(ref mut cmds) = task.run_parallel {
+        for cmd in cmds {
+            *cmd = substitute_vars(cmd, vars)?;
+        }
+    }
+    Ok(())
+}
+
 pub fn load(path: &Path) -> Result<PlzConfig> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
@@ -430,7 +482,7 @@ pub fn load(path: &Path) -> Result<PlzConfig> {
                 .and_then(|v| v.as_table())
             {
                 for (key, item) in group_table.iter() {
-                    if key == "extends" {
+                    if key == "extends" || key == "vars" {
                         continue;
                     }
                     if let Some(task) = group.tasks.get_mut(key)
@@ -440,6 +492,29 @@ pub fn load(path: &Path) -> Result<PlzConfig> {
                     {
                         task.description = extract_comment(prefix);
                     }
+                }
+            }
+        }
+    }
+
+    // Apply [vars] substitution to top-level tasks
+    if let Some(ref vars) = config.vars {
+        for (name, task) in config.tasks.iter_mut() {
+            substitute_task_vars(task, vars).with_context(|| format!("In task \"{name}\""))?;
+        }
+    }
+
+    // Apply vars to taskgroup tasks (merge: top-level vars + group vars)
+    if let Some(ref mut groups) = config.taskgroup {
+        for (group_name, group) in groups.iter_mut() {
+            let mut merged_vars: HashMap<String, String> = config.vars.clone().unwrap_or_default();
+            if let Some(ref group_vars) = group.vars {
+                merged_vars.extend(group_vars.clone());
+            }
+            if !merged_vars.is_empty() {
+                for (task_name, task) in group.tasks.iter_mut() {
+                    substitute_task_vars(task, &merged_vars)
+                        .with_context(|| format!("In task \"{group_name}:{task_name}\""))?;
                 }
             }
         }

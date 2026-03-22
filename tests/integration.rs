@@ -793,6 +793,140 @@ run = "echo hello"
         let path = dir.path().join("nonexistent.toml");
         assert!(config::load(&path).is_err());
     }
+
+    #[test]
+    fn vars_substitution_in_run() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[vars]
+name = "myapp"
+
+[tasks.build]
+run = "echo {{name}}"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        let run = cfg.tasks["build"].run.as_ref().unwrap();
+        assert_eq!(run.0, vec!["echo myapp"]);
+    }
+
+    #[test]
+    fn vars_substitution_in_serial_and_parallel() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[vars]
+x = "hello"
+
+[tasks.multi]
+run_serial = ["echo {{x}}", "echo {{x}} world"]
+run_parallel = ["echo {{x}} a", "echo {{x}} b"]
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        let task = &cfg.tasks["multi"];
+        assert_eq!(
+            task.run_serial.as_ref().unwrap(),
+            &vec!["echo hello", "echo hello world"]
+        );
+        assert_eq!(
+            task.run_parallel.as_ref().unwrap(),
+            &vec!["echo hello a", "echo hello b"]
+        );
+    }
+
+    #[test]
+    fn vars_multiple_occurrences() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[vars]
+port = "8080"
+
+[tasks.serve]
+run = "docker run -p {{port}}:{{port}}"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        let run = cfg.tasks["serve"].run.as_ref().unwrap();
+        assert_eq!(run.0, vec!["docker run -p 8080:8080"]);
+    }
+
+    #[test]
+    fn vars_taskgroup_overrides_toplevel() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[vars]
+port = "8080"
+
+[taskgroup.web.vars]
+port = "3000"
+
+[taskgroup.web.serve]
+run = "echo {{port}}"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        let task = cfg.get_group_task("web", "serve").unwrap();
+        assert_eq!(task.run.as_ref().unwrap().0, vec!["echo 3000"]);
+    }
+
+    #[test]
+    fn vars_taskgroup_inherits_toplevel() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[vars]
+name = "myapp"
+
+[taskgroup.web.serve]
+run = "echo {{name}}"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        let task = cfg.get_group_task("web", "serve").unwrap();
+        assert_eq!(task.run.as_ref().unwrap().0, vec!["echo myapp"]);
+    }
+
+    #[test]
+    fn vars_unresolved_errors() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[vars]
+name = "myapp"
+
+[tasks.build]
+run = "echo {{typo}}"
+"#,
+        );
+        let err = config::load(&path).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("Unresolved variable"), "got: {msg}");
+    }
+
+    #[test]
+    fn vars_no_vars_unchanged() {
+        let dir = TempDir::new().unwrap();
+        let path = write_config(
+            &dir,
+            r#"
+[tasks.hello]
+run = "echo hello"
+"#,
+        );
+        let cfg = config::load(&path).unwrap();
+        let run = cfg.tasks["hello"].run.as_ref().unwrap();
+        assert_eq!(run.0, vec!["echo hello"]);
+    }
 }
 
 mod runner_tests {
@@ -1326,6 +1460,27 @@ run = "touch {}"
         runner::run_task(&cfg, "main", dir.path(), false).unwrap();
         assert!(m1.exists());
         assert!(m2.exists());
+    }
+
+    #[test]
+    fn run_task_with_vars_substitution() {
+        let dir = TempDir::new().unwrap();
+        let marker = dir.path().join("vars_marker.txt");
+        let cfg = load_config(
+            &dir,
+            &format!(
+                r#"
+[vars]
+marker_path = "{}"
+
+[tasks.test]
+run = "touch {{{{marker_path}}}}"
+"#,
+                marker.display()
+            ),
+        );
+        runner::run_task(&cfg, "test", dir.path(), false).unwrap();
+        assert!(marker.exists());
     }
 }
 

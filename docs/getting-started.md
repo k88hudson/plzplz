@@ -93,6 +93,23 @@ Then install them:
 plz hooks install
 ```
 
+## Variables
+
+Use `[vars]` to avoid repeating values across tasks:
+
+```toml
+[vars]
+app = "myapp"
+
+[tasks.build]
+run = "docker build -t {{app}} ."
+
+[tasks.run]
+run = "docker run {{app}}"
+```
+
+See the [reference](reference.md#variables) for taskgroup overrides and more details.
+
 ## Passing arguments
 
 Extra arguments after the task name are forwarded to the command:

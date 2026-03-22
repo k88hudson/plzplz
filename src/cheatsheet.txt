@@ -60,6 +60,13 @@ git_hook = "pre-commit"
 env = { NODE_ENV = "production" }
 dir = "packages/app"
 
+## Variables | {{key}} substitution in commands
+[vars]
+app = "myapp"
+
+[tasks.build]
+run = "docker build -t {{app}} ."
+
 ## Task groups
 [taskgroup.docs.build]
 run = "pnpm docs:build"

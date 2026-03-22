@@ -41,6 +41,17 @@
       "additionalProperties": {
         "$ref": "#/$defs/Task"
       }
+    },
+    "vars": {
+      "description": "Variables for {{key}} substitution in task commands",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": null
     }
   },
   "$defs": {
@@ -232,6 +243,13 @@
       "properties": {
         "extends": {
           "$ref": "#/$defs/GlobalSettings"
+        },
+        "vars": {
+          "description": "Variables for {{key}} substitution in task commands within this group",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
         }
       },
       "additionalProperties": {

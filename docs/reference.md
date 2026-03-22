@@ -226,6 +226,38 @@ dir = "."
 # per-task dir overrides [extends]
 ```
 
+### Variables
+
+Define reusable values with `[vars]` and reference them in commands using `{{key}}`:
+
+```toml
+[vars]
+app = "myapp"
+registry = "ghcr.io/myorg"
+
+[tasks.build]
+run = "docker build -t {{registry}}/{{app}} ."
+
+[tasks.push]
+run = "docker push {{registry}}/{{app}}"
+```
+
+Taskgroups can define their own `[taskgroup.X.vars]` that override top-level vars:
+
+```toml
+[vars]
+port = "3000"
+
+[taskgroup.api.vars]
+port = "8080"
+
+[taskgroup.api.serve]
+run = "python -m http.server {{port}}"
+# uses port 8080
+```
+
+Substitution happens at config load time and applies to `run`, `run_serial`, and `run_parallel`. Any unresolved `{{...}}` pattern causes an error.
+
 ### Task groups
 
 Namespace related tasks under `[taskgroup.X]`:
