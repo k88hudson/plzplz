@@ -228,9 +228,9 @@ dir = "."
 
 ### Variables
 
-Define reusable values with `[vars]` and reference them in commands using `{{key}}`:
+Define reusable values with `[vars]` and reference them in commands using <code v-pre>{{key}}</code>:
 
-```toml
+```toml v-pre
 [vars]
 app = "myapp"
 registry = "ghcr.io/myorg"
@@ -244,7 +244,7 @@ run = "docker push {{registry}}/{{app}}"
 
 Taskgroups can define their own `[taskgroup.X.vars]` that override top-level vars:
 
-```toml
+```toml v-pre
 [vars]
 port = "3000"
 
@@ -256,7 +256,7 @@ run = "python -m http.server {{port}}"
 # uses port 8080
 ```
 
-Substitution happens at config load time and applies to `run`, `run_serial`, and `run_parallel`. Any unresolved `{{...}}` pattern causes an error.
+Substitution happens at config load time and applies to `run`, `run_serial`, and `run_parallel`. Any unresolved <code v-pre>{{...}}</code> pattern causes an error.
 
 ### Task groups
 

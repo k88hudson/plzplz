@@ -97,7 +97,7 @@ plz hooks install
 
 Use `[vars]` to avoid repeating values across tasks:
 
-```toml
+```toml v-pre
 [vars]
 app = "myapp"
 
