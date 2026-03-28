@@ -45,6 +45,16 @@ version = ">=0.1.0"
 
 The value is a [semver version requirement](https://docs.rs/semver/latest/semver/struct.VersionReq.html) (e.g. `">=0.1.0"`, `"^0.2"`, `"~1.0"`).
 
+### Unknown key warnings
+
+plz validates your config against its JSON schema and warns about any unrecognized keys:
+
+```
+warning: unknown key "oops" in [tasks.build]
+```
+
+This helps catch typos (e.g. `run_seria` instead of `run_serial`) without breaking existing configs.
+
 ### Basic task
 
 ```toml

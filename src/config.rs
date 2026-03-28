@@ -31,6 +31,7 @@ pub const VALID_GIT_HOOKS: &[&str] = &[
 ];
 
 #[derive(Debug, Default, Clone, Deserialize, JsonSchema)]
+#[schemars(deny_unknown_fields)]
 pub struct GlobalSettings {
     /// Tool environment wrapper applied to all tasks: "pnpm", "npm", "uv", or "uvx"
     #[serde(default, rename = "env")]
@@ -115,6 +116,7 @@ impl JsonSchema for TaskGroup {
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
+#[schemars(deny_unknown_fields)]
 pub struct PlzSection {
     /// Semver version requirement for plz (e.g. ">=0.1.0", "^0.2")
     #[serde(default)]
@@ -122,6 +124,7 @@ pub struct PlzSection {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[schemars(deny_unknown_fields)]
 pub struct PlzConfig {
     /// plz tool settings (e.g. required version)
     #[serde(default)]
@@ -197,6 +200,7 @@ impl JsonSchema for StringOrVec {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[schemars(deny_unknown_fields)]
 pub struct Task {
     /// A shell command (or list of commands to run serially) to run
     #[serde(default)]
@@ -366,6 +370,66 @@ fn substitute_task_vars(task: &mut Task, vars: &HashMap<String, String>) -> Resu
     Ok(())
 }
 
+fn format_location(path: &str) -> String {
+    if path.is_empty() {
+        "plz.toml".to_string()
+    } else {
+        let parts: Vec<&str> = path.split('/').filter(|s: &&str| !s.is_empty()).collect();
+        format!("[{}]", parts.join("."))
+    }
+}
+
+fn collect_additional_properties_errors<'a>(
+    warnings: &mut Vec<String>,
+    errors: impl Iterator<Item = jsonschema::ValidationError<'a>>,
+) {
+    use jsonschema::error::ValidationErrorKind;
+    for error in errors {
+        match error.kind() {
+            ValidationErrorKind::AdditionalProperties { unexpected } => {
+                let location = format_location(&error.instance_path().to_string());
+                for key in unexpected {
+                    warnings.push(format!("unknown key \"{key}\" in {location}"));
+                }
+            }
+            ValidationErrorKind::AnyOf { context } => {
+                // Look for AdditionalProperties errors nested inside anyOf branches
+                for branch_errors in context {
+                    for inner in branch_errors {
+                        if let ValidationErrorKind::AdditionalProperties { unexpected } =
+                            inner.kind()
+                        {
+                            let location = format_location(&inner.instance_path().to_string());
+                            for key in unexpected {
+                                warnings.push(format!("unknown key \"{key}\" in {location}"));
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+pub fn warn_unknown_keys(doc: &DocumentMut) -> Vec<String> {
+    let schema = schemars::schema_for!(PlzConfig);
+    let schema_json = serde_json::to_value(&schema).expect("schema serializes to JSON");
+    let Ok(validator) = jsonschema::validator_for(&schema_json) else {
+        return Vec::new();
+    };
+
+    let toml_str = doc.to_string();
+    let json_value: serde_json::Value = match toml_edit::de::from_str(&toml_str) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut warnings = Vec::new();
+    collect_additional_properties_errors(&mut warnings, validator.iter_errors(&json_value));
+    warnings
+}
+
 pub fn load(path: &Path) -> Result<PlzConfig> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
@@ -376,6 +440,11 @@ pub fn load(path: &Path) -> Result<PlzConfig> {
 
     let mut config: PlzConfig = toml_edit::de::from_document(doc.clone())
         .with_context(|| "Failed to deserialize config")?;
+
+    // Warn about unknown keys
+    for warning in warn_unknown_keys(&doc) {
+        eprintln!("\x1b[33mwarning:\x1b[0m {warning}");
+    }
 
     // Extract comments above [tasks.*] as descriptions (fallback when no explicit description)
     if let Some(tasks_table) = doc.get("tasks").and_then(|v| v.as_table()) {

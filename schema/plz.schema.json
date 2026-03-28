@@ -54,6 +54,7 @@
       "default": null
     }
   },
+  "additionalProperties": false,
   "$defs": {
     "GlobalSettings": {
       "type": "object",
@@ -74,7 +75,8 @@
           ],
           "default": null
         }
-      }
+      },
+      "additionalProperties": false
     },
     "PlzSection": {
       "type": "object",
@@ -87,7 +89,8 @@
           ],
           "default": null
         }
-      }
+      },
+      "additionalProperties": false
     },
     "Task": {
       "type": "object",
@@ -235,7 +238,8 @@
             "type": "string"
           }
         }
-      }
+      },
+      "additionalProperties": false
     },
     "TaskGroup": {
       "description": "A group of related tasks with optional shared defaults",

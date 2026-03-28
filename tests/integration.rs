@@ -927,6 +927,145 @@ run = "echo hello"
         let run = cfg.tasks["hello"].run.as_ref().unwrap();
         assert_eq!(run.0, vec!["echo hello"]);
     }
+
+    #[test]
+    fn warn_unknown_top_level_key() {
+        let doc: toml_edit::DocumentMut = r#"
+[tasks.hello]
+run = "echo hello"
+
+[something]
+foo = "bar"
+"#
+        .parse()
+        .unwrap();
+        let warnings = config::warn_unknown_keys(&doc);
+        assert_eq!(warnings, vec!["unknown key \"something\" in plz.toml"]);
+    }
+
+    #[test]
+    fn warn_unknown_task_key() {
+        let doc: toml_edit::DocumentMut = r#"
+[tasks.hello]
+run = "echo hello"
+oops = true
+"#
+        .parse()
+        .unwrap();
+        let warnings = config::warn_unknown_keys(&doc);
+        assert_eq!(warnings, vec!["unknown key \"oops\" in [tasks.hello]"]);
+    }
+
+    #[test]
+    fn warn_unknown_plz_key() {
+        let doc: toml_edit::DocumentMut = r#"
+[plz]
+version = ">=0.1.0"
+unknown = "bad"
+
+[tasks.hello]
+run = "echo hello"
+"#
+        .parse()
+        .unwrap();
+        let warnings = config::warn_unknown_keys(&doc);
+        assert_eq!(warnings, vec!["unknown key \"unknown\" in [plz]"]);
+    }
+
+    #[test]
+    fn warn_unknown_extends_key() {
+        let doc: toml_edit::DocumentMut = r#"
+[extends]
+env = "pnpm"
+bad = "value"
+
+[tasks.hello]
+run = "echo hello"
+"#
+        .parse()
+        .unwrap();
+        let warnings = config::warn_unknown_keys(&doc);
+        assert_eq!(warnings, vec!["unknown key \"bad\" in [extends]"]);
+    }
+
+    #[test]
+    fn warn_unknown_taskgroup_task_key() {
+        let doc: toml_edit::DocumentMut = r#"
+[taskgroup.mygroup.mytask]
+run = "echo hello"
+nope = "bad"
+"#
+        .parse()
+        .unwrap();
+        let warnings = config::warn_unknown_keys(&doc);
+        assert_eq!(
+            warnings,
+            vec!["unknown key \"nope\" in [taskgroup.mygroup.mytask]"]
+        );
+    }
+
+    #[test]
+    fn warn_unknown_taskgroup_extends_key() {
+        let doc: toml_edit::DocumentMut = r#"
+[taskgroup.mygroup.extends]
+env = "pnpm"
+bad = "value"
+
+[taskgroup.mygroup.mytask]
+run = "echo hello"
+"#
+        .parse()
+        .unwrap();
+        let warnings = config::warn_unknown_keys(&doc);
+        assert_eq!(
+            warnings,
+            vec!["unknown key \"bad\" in [taskgroup.mygroup.extends]"]
+        );
+    }
+
+    #[test]
+    fn no_warnings_for_valid_config() {
+        let doc: toml_edit::DocumentMut = r#"
+[plz]
+version = ">=0.1.0"
+
+[extends]
+env = "pnpm"
+dir = "."
+
+[vars]
+name = "world"
+
+[tasks.hello]
+run = "echo hello"
+run_serial = ["echo a", "echo b"]
+run_parallel = ["echo c", "echo d"]
+depends = "hello"
+env = "pnpm"
+dir = "."
+fail_hook = "echo fail"
+description = "Says hello"
+git_hook = "pre-commit"
+hide = true
+
+[taskgroup.mygroup.extends]
+env = "pnpm"
+dir = "."
+
+[taskgroup.mygroup.vars]
+foo = "bar"
+
+[taskgroup.mygroup.mytask]
+run = "echo hello"
+"#
+        .parse()
+        .unwrap();
+        let warnings = config::warn_unknown_keys(&doc);
+        assert!(
+            warnings.is_empty(),
+            "Expected no warnings, got: {warnings:?}"
+        );
+    }
 }
 
 mod runner_tests {
