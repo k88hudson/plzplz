@@ -246,7 +246,7 @@ pub fn format_help() -> String {
 
     let mut out = String::new();
     out.push_str(&format!(
-        "{dim}plz is a simple task runner. Define tasks in plz.toml and run them with plz.\nRun {reset}{bold}plz schema{reset}{dim} to see the full schema for plz.toml.{reset}\n\n"
+        "{dim}plz is a simple task runner. Define tasks in plz.toml and run them with plz.\nRun {reset}{bold}plz schema{reset}{dim} to see the full schema for plz.toml.\nGitHub Action: {reset}{bold}k88hudson/setup-plz{reset}\n\n"
     ));
     out.push_str(&format!(
         "{bold}plz{reset} [task] [args...]          Run a task from plz.toml\n"
