@@ -20,6 +20,29 @@ or `uv`:
 uv tool install plzplz
 ```
 
+## GitHub Actions
+
+Use the setup action to install and cache `plz` in your workflows:
+
+```yaml
+- uses: k88hudson/setup-plz@v1
+```
+
+Pin to a specific version:
+
+```yaml
+- uses: k88hudson/setup-plz@v1
+  with:
+    version: "0.0.17"
+```
+
+Then use `plz` normally in subsequent steps:
+
+```yaml
+- run: plz check
+- run: plz test
+```
+
 ## Initialize a project
 
 In your project directory, run:
