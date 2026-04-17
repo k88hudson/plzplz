@@ -593,17 +593,16 @@ fn handle_fail_hook(
             eprintln!("⚠️  {msg}");
         }
         FailHook::Suggest { suggest_command } => {
-            let wrapped = wrap(suggest_command);
             eprintln!("\n\x1b[31mTask failed:\x1b[0m {error}");
             if !interactive {
-                eprintln!("\x1b[33mSuggestion:\x1b[0m try running \x1b[1m{wrapped}\x1b[0m");
+                eprintln!("\n\x1b[1;33m💡 Try this:\x1b[0m \x1b[1;36m{suggest_command}\x1b[0m\n");
             } else {
-                let run_it: bool = cliclack::confirm(format!("Run `{wrapped}`?"))
+                let run_it: bool = cliclack::confirm(format!("💡 Try this: `{suggest_command}`?"))
                     .initial_value(true)
                     .interact()
                     .unwrap_or(false);
                 if run_it {
-                    if exec_shell(&wrapped, work_dir).is_ok() {
+                    if exec_shell(suggest_command, work_dir).is_ok() {
                         return Ok(true);
                     }
                     eprintln!("\x1b[31mFix command failed.\x1b[0m");
