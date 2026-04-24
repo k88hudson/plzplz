@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.18](https://github.com/k88hudson/plzplz/compare/v0.0.17...v0.0.18) - 2026-04-24
+
+### Added
+
+- add healthcheck exclude config and --staged flag
+- warn on unknown keys in plz.toml
+
+### Fixed
+
+- don't wrap suggest_command with tool_env, make it more prominent
+- docs not rendering curly braces correctly
+
+### Other
+
+- added github action note to --help
+- add setup-plz action info
+
 ## [0.0.17](https://github.com/k88hudson/plzplz/compare/v0.0.16...v0.0.17) - 2026-03-22
 
 ### Added
