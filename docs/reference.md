@@ -14,7 +14,7 @@ for the TOML schema.
 | `plz hooks install`     | Install git hooks defined in plz.toml            |
 | `plz hooks uninstall`   | Remove plz-managed git hooks                     |
 | `plz hooks run <stage>` | Run all tasks for a git hook stage               |
-| `plz healthcheck`       | Run code health checks on your repo              |
+| `plz healthcheck [--staged]` | Run code health checks on your repo (use `--staged` for only staged files) |
 | `plz schema`            | Print JSON schema for plz.toml                   |
 | `plz cheatsheet`        | Print a cheatsheet of plz.toml features           |
 | `plz update`            | Update plz to the latest version                 |
@@ -321,8 +321,11 @@ check_for_updates = true
 `plz healthcheck` runs Rust-native code health checks on any git repo. No `plz.toml` required.
 
 ```bash
-plz healthcheck
+plz healthcheck            # check all tracked files
+plz healthcheck --staged   # check only files staged for commit
 ```
+
+`--staged` is useful in pre-commit hooks where you only want to validate what's about to be committed.
 
 ### Checks
 
@@ -354,12 +357,25 @@ Add `plz:ignore-file <rule>` to the first line of a file to skip an entire file 
 BEGIN RSA PRIVATE KEY  (this file will be skipped) <!-- plz:ignore private-key -->
 ```
 
+### Excluding files
+
+Use a `[healthcheck]` section in `plz.toml` to skip files matching glob patterns. Patterns are matched against paths relative to the repo root.
+
+```toml
+[healthcheck]
+exclude = [
+  "vendor/**",
+  "**/*.min.js",
+  "fixtures/snapshot-*.txt",
+]
+```
+
 ### Using with git hooks
 
-Wire healthcheck into a pre-commit hook via `plz.toml`:
+Wire healthcheck into a pre-commit hook via `plz.toml`. Use `--staged` so only files about to be committed are checked:
 
 ```toml
 [tasks.healthcheck]
-run = "plz healthcheck"
+run = "plz healthcheck --staged"
 git_hook = "pre-commit"
 ```

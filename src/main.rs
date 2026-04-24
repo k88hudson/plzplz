@@ -59,7 +59,11 @@ enum PlzCommand {
     /// Update plz to the latest version
     Update,
     /// Run code health checks on your repo
-    Healthcheck,
+    Healthcheck {
+        /// Only check files staged for commit (instead of all tracked files)
+        #[arg(long)]
+        staged: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -160,8 +164,8 @@ const HELP_COMMANDS: &[HelpEntry] = &[
         description: "Update plz to the latest version",
     },
     HelpEntry {
-        usage: "healthcheck",
-        description: "Run code health checks on your repo",
+        usage: "healthcheck [--staged]",
+        description: "Run code health checks on your repo (use --staged to check only staged files)",
     },
     HelpEntry {
         usage: "plz",
@@ -315,9 +319,9 @@ fn main() -> Result<()> {
             }
             Some(PlzCommand::Cheatsheet) => return init::print_cheatsheet(),
             Some(PlzCommand::Update) => return init::self_update(),
-            Some(PlzCommand::Healthcheck) => {
+            Some(PlzCommand::Healthcheck { staged }) => {
                 let base_dir = std::env::current_dir()?;
-                return healthcheck::run_healthcheck(&base_dir);
+                return healthcheck::run_healthcheck(&base_dir, *staged);
             }
             Some(PlzCommand::Hooks { hook_command }) => {
                 let config_path =
@@ -501,7 +505,8 @@ fn try_plz_subcommand(task: &[String]) -> Option<Result<()>> {
                 Ok(d) => d,
                 Err(e) => return Some(Err(e.into())),
             };
-            Some(healthcheck::run_healthcheck(&base_dir))
+            let staged = task.iter().skip(1).any(|a| a == "--staged");
+            Some(healthcheck::run_healthcheck(&base_dir, staged))
         }
         "hooks" => {
             let config_path = match find_config() {

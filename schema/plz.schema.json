@@ -14,6 +14,17 @@
         }
       ]
     },
+    "healthcheck": {
+      "description": "Healthcheck configuration (e.g. file patterns to exclude)",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/HealthcheckSection"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "plz": {
       "description": "plz tool settings (e.g. required version)",
       "anyOf": [
@@ -74,6 +85,20 @@
             "null"
           ],
           "default": null
+        }
+      },
+      "additionalProperties": false
+    },
+    "HealthcheckSection": {
+      "type": "object",
+      "properties": {
+        "exclude": {
+          "description": "Glob patterns of files to exclude from all healthcheck checks (e.g. \"vendor/**\", \"**/*.min.js\")",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
         }
       },
       "additionalProperties": false

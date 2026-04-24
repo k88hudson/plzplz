@@ -6,9 +6,12 @@ pub mod end_of_file;
 pub mod mixed_line_ending;
 pub mod trailing_whitespace;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use glob::Pattern;
 use std::path::Path;
 use std::process::Command;
+
+use crate::config;
 
 pub struct Finding {
     pub file: String,
@@ -67,13 +70,33 @@ pub fn file_str_is_ignored(content: &str, rule: &str) -> bool {
 }
 
 pub fn collect_files(base_dir: &Path) -> Result<Vec<FileEntry>> {
+    collect_files_inner(base_dir, false)
+}
+
+pub fn collect_staged_files(base_dir: &Path) -> Result<Vec<FileEntry>> {
+    collect_files_inner(base_dir, true)
+}
+
+fn collect_files_inner(base_dir: &Path, staged_only: bool) -> Result<Vec<FileEntry>> {
+    let args: &[&str] = if staged_only {
+        &[
+            "diff",
+            "--cached",
+            "--name-only",
+            "-z",
+            "--diff-filter=ACMR",
+        ]
+    } else {
+        &["ls-files", "-z"]
+    };
     let output = Command::new("git")
-        .args(["ls-files", "-z"])
+        .args(args)
         .current_dir(base_dir)
         .output()?;
     if !output.status.success() {
         anyhow::bail!(
-            "git ls-files failed: {}",
+            "git {} failed: {}",
+            args[0],
             String::from_utf8_lossy(&output.stderr)
         );
     }
@@ -107,8 +130,17 @@ fn is_binary(path: &Path) -> bool {
     buf[..n].contains(&0)
 }
 
-pub fn run_all_checks(base_dir: &Path) -> Result<Vec<CheckResult>> {
-    let files = collect_files(base_dir)?;
+pub fn run_all_checks(base_dir: &Path, staged_only: bool) -> Result<Vec<CheckResult>> {
+    let exclude_patterns = load_exclude_patterns(base_dir)?;
+    let collected = if staged_only {
+        collect_staged_files(base_dir)?
+    } else {
+        collect_files(base_dir)?
+    };
+    let files: Vec<FileEntry> = collected
+        .into_iter()
+        .filter(|f| !is_excluded(&f.path, &exclude_patterns))
+        .collect();
     let results = vec![
         check_merge_conflict::run(base_dir, &files)?,
         check_large_files::run(base_dir, &files)?,
@@ -119,6 +151,30 @@ pub fn run_all_checks(base_dir: &Path) -> Result<Vec<CheckResult>> {
         mixed_line_ending::run(base_dir, &files)?,
     ];
     Ok(results)
+}
+
+fn load_exclude_patterns(base_dir: &Path) -> Result<Vec<Pattern>> {
+    let Some(config_path) = ["plz.toml", ".plz.toml"]
+        .iter()
+        .map(|n| base_dir.join(n))
+        .find(|p| p.exists())
+    else {
+        return Ok(Vec::new());
+    };
+    let cfg = config::load(&config_path)?;
+    let Some(hc) = cfg.healthcheck else {
+        return Ok(Vec::new());
+    };
+    hc.exclude
+        .iter()
+        .map(|s| {
+            Pattern::new(s).with_context(|| format!("Invalid healthcheck exclude pattern \"{s}\""))
+        })
+        .collect()
+}
+
+fn is_excluded(path: &str, patterns: &[Pattern]) -> bool {
+    patterns.iter().any(|p| p.matches(path))
 }
 
 pub fn print_results(results: &[CheckResult]) {
@@ -149,8 +205,8 @@ pub fn print_results(results: &[CheckResult]) {
     }
 }
 
-pub fn run_healthcheck(base_dir: &Path) -> Result<()> {
-    let results = run_all_checks(base_dir)?;
+pub fn run_healthcheck(base_dir: &Path, staged_only: bool) -> Result<()> {
+    let results = run_all_checks(base_dir, staged_only)?;
     print_results(&results);
     let any_failed = results.iter().any(|r| !r.passed);
     if any_failed {

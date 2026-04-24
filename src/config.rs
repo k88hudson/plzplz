@@ -123,12 +123,23 @@ pub struct PlzSection {
     pub version: Option<String>,
 }
 
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct HealthcheckSection {
+    /// Glob patterns of files to exclude from all healthcheck checks (e.g. "vendor/**", "**/*.min.js")
+    #[serde(default)]
+    pub exclude: Vec<String>,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct PlzConfig {
     /// plz tool settings (e.g. required version)
     #[serde(default)]
     pub plz: Option<PlzSection>,
+    /// Healthcheck configuration (e.g. file patterns to exclude)
+    #[serde(default)]
+    pub healthcheck: Option<HealthcheckSection>,
     /// Global defaults that apply to all tasks (can be overridden per-task)
     #[serde(default)]
     pub extends: Option<GlobalSettings>,

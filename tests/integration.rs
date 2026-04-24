@@ -3265,4 +3265,174 @@ mod healthcheck_tests {
             .assert()
             .success();
     }
+
+    // -- exclude patterns --
+
+    #[test]
+    fn healthcheck_exclude_skips_matching_files() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        // A file that would fail merge-conflict check, but is excluded.
+        fs::write(
+            dir.path().join("vendor.txt"),
+            "<<<<<<< HEAD\nfoo\n=======\nbar\n>>>>>>> branch\n",
+        )
+        .unwrap();
+        fs::write(dir.path().join("ok.txt"), "hello\n").unwrap();
+        fs::write(
+            dir.path().join("plz.toml"),
+            "[healthcheck]\nexclude = [\"vendor.txt\"]\n",
+        )
+        .unwrap();
+        git_add_commit(&dir);
+
+        plz()
+            .arg("healthcheck")
+            .current_dir(dir.path())
+            .assert()
+            .success();
+    }
+
+    #[test]
+    fn healthcheck_exclude_glob_pattern() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::create_dir(dir.path().join("vendor")).unwrap();
+        fs::write(
+            dir.path().join("vendor/lib.txt"),
+            "<<<<<<< HEAD\nfoo\n=======\nbar\n>>>>>>> branch\n",
+        )
+        .unwrap();
+        fs::write(dir.path().join("main.txt"), "hello\n").unwrap();
+        fs::write(
+            dir.path().join("plz.toml"),
+            "[healthcheck]\nexclude = [\"vendor/**\"]\n",
+        )
+        .unwrap();
+        git_add_commit(&dir);
+
+        plz()
+            .arg("healthcheck")
+            .current_dir(dir.path())
+            .assert()
+            .success();
+    }
+
+    #[test]
+    fn healthcheck_exclude_does_not_hide_other_files() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(dir.path().join("vendor.txt"), "ok\n").unwrap();
+        // This non-excluded file has a real issue and should still fail.
+        fs::write(
+            dir.path().join("bad.txt"),
+            "<<<<<<< HEAD\nfoo\n=======\nbar\n>>>>>>> branch\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("plz.toml"),
+            "[healthcheck]\nexclude = [\"vendor.txt\"]\n",
+        )
+        .unwrap();
+        git_add_commit(&dir);
+
+        plz()
+            .arg("healthcheck")
+            .current_dir(dir.path())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("bad.txt"));
+    }
+
+    #[test]
+    fn healthcheck_invalid_exclude_pattern_errors() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(dir.path().join("file.txt"), "hello\n").unwrap();
+        // `[` opens a character class that is never closed -> invalid glob.
+        fs::write(
+            dir.path().join("plz.toml"),
+            "[healthcheck]\nexclude = [\"[\"]\n",
+        )
+        .unwrap();
+        git_add_commit(&dir);
+
+        plz()
+            .arg("healthcheck")
+            .current_dir(dir.path())
+            .assert()
+            .failure();
+    }
+
+    // -- staged-only mode --
+
+    #[test]
+    fn healthcheck_staged_only_checks_staged_files() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        // Committed clean file.
+        fs::write(dir.path().join("ok.txt"), "hello\n").unwrap();
+        git_add_commit(&dir);
+
+        // Now stage a bad file (merge conflict markers) but don't commit it.
+        fs::write(
+            dir.path().join("bad.txt"),
+            "<<<<<<< HEAD\nfoo\n=======\nbar\n>>>>>>> branch\n",
+        )
+        .unwrap();
+        process::Command::new("git")
+            .args(["add", "bad.txt"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+
+        plz()
+            .arg("healthcheck")
+            .arg("--staged")
+            .current_dir(dir.path())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("bad.txt"));
+    }
+
+    #[test]
+    fn healthcheck_staged_only_ignores_unstaged_files() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(dir.path().join("ok.txt"), "hello\n").unwrap();
+        git_add_commit(&dir);
+
+        // A bad file exists in working tree but is NOT staged.
+        fs::write(
+            dir.path().join("bad.txt"),
+            "<<<<<<< HEAD\nfoo\n=======\nbar\n>>>>>>> branch\n",
+        )
+        .unwrap();
+
+        plz()
+            .arg("healthcheck")
+            .arg("--staged")
+            .current_dir(dir.path())
+            .assert()
+            .success();
+    }
+
+    #[test]
+    fn healthcheck_default_checks_all_tracked_files() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        // Commit a file with merge conflict markers — it's tracked, so default check should fail.
+        fs::write(
+            dir.path().join("bad.txt"),
+            "<<<<<<< HEAD\nfoo\n=======\nbar\n>>>>>>> branch\n",
+        )
+        .unwrap();
+        git_add_commit(&dir);
+
+        plz()
+            .arg("healthcheck")
+            .current_dir(dir.path())
+            .assert()
+            .failure();
+    }
 }
