@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.19](https://github.com/k88hudson/plzplz/compare/v0.0.18...v0.0.19) - 2026-05-01
+
+### Other
+
+- add linux musl targets ([#18](https://github.com/k88hudson/plzplz/pull/18))
+
 ## [0.0.18](https://github.com/k88hudson/plzplz/compare/v0.0.17...v0.0.18) - 2026-04-24
 
 ### Added
