@@ -490,7 +490,7 @@ fn run_parallel_commands(
     work_dir: &Path,
     base_dir: &Path,
     interactive: bool,
-    completed: &CompletedDeps,
+    _completed: &CompletedDeps,
 ) -> Result<()> {
     let mut children = Vec::new();
     let mut plz_refs: Vec<TaskRef> = Vec::new();
@@ -514,12 +514,44 @@ fn run_parallel_commands(
     let mut task_results: Vec<(String, bool)> = Vec::new();
     let mut failures: Vec<DeferredFailure> = Vec::new();
 
-    for task_ref in &plz_refs {
-        let display = match task_ref {
-            TaskRef::TopLevel(n) => n.clone(),
-            TaskRef::Group(g, t) => format!("{g}:{t}"),
-        };
-        match run_ref_task(config, task_ref, base_dir, interactive, false, completed) {
+    // Run plz: refs concurrently in scoped threads. Each thread gets a fresh
+    // CompletedDeps because Rc isn't Send and parallel branches are independent.
+    let ref_outcomes: Vec<(String, Result<()>)> = std::thread::scope(|s| {
+        let handles: Vec<_> = plz_refs
+            .iter()
+            .map(|task_ref| {
+                let display = match task_ref {
+                    TaskRef::TopLevel(n) => n.clone(),
+                    TaskRef::Group(g, t) => format!("{g}:{t}"),
+                };
+                let handle = s.spawn(move || {
+                    run_ref_task(
+                        config,
+                        task_ref,
+                        base_dir,
+                        interactive,
+                        false,
+                        &new_completed_deps(),
+                    )
+                });
+                (display, handle)
+            })
+            .collect();
+
+        handles
+            .into_iter()
+            .map(|(display, handle)| match handle.join() {
+                Ok(res) => (display, res),
+                Err(_) => (
+                    display.clone(),
+                    Err(anyhow::anyhow!("Task \"{display}\" panicked")),
+                ),
+            })
+            .collect()
+    });
+
+    for (display, res) in ref_outcomes {
+        match res {
             Ok(()) => task_results.push((display, true)),
             Err(e) => {
                 task_results.push((display.clone(), false));

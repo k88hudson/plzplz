@@ -1194,6 +1194,36 @@ run_parallel = ["touch {}", "touch {}"]
     }
 
     #[test]
+    fn run_parallel_task_refs_execute_concurrently() {
+        // Regression: previously plz: refs in run_parallel ran sequentially.
+        // Each task signals "started" then waits up to 5s for the other's
+        // signal — serial execution would time out and fail the task.
+        let dir = TempDir::new().unwrap();
+        let a_started = dir.path().join("a_started");
+        let b_started = dir.path().join("b_started");
+        let cfg = load_config(
+            &dir,
+            &format!(
+                r#"
+[tasks.both]
+run_parallel = ["plz:a", "plz:b"]
+
+[tasks.a]
+run = "bash -c 'touch {a}; for i in $(seq 1 50); do [ -f {b} ] && exit 0; sleep 0.1; done; exit 1'"
+
+[tasks.b]
+run = "bash -c 'touch {b}; for i in $(seq 1 50); do [ -f {a} ] && exit 0; sleep 0.1; done; exit 1'"
+"#,
+                a = a_started.display(),
+                b = b_started.display(),
+            ),
+        );
+        runner::run_task(&cfg, "both", dir.path(), false).unwrap();
+        assert!(a_started.exists());
+        assert!(b_started.exists());
+    }
+
+    #[test]
     fn run_parallel_fails_on_error() {
         let dir = TempDir::new().unwrap();
         let cfg = load_config(
