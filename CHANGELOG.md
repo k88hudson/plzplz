@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.20](https://github.com/k88hudson/plzplz/compare/v0.0.19...v0.0.20) - 2026-05-25
+
+### Added
+
+- *(healthcheck)* configure which checks run + git_hook integration ([#22](https://github.com/k88hudson/plzplz/pull/22))
+
+### Fixed
+
+- run_parallel runs plz: refs concurrently
+- blank lines terminate task description comments
+
 ## [0.0.19](https://github.com/k88hudson/plzplz/compare/v0.0.18...v0.0.19) - 2026-05-01
 
 ### Other
