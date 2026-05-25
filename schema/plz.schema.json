@@ -92,6 +92,28 @@
     "HealthcheckSection": {
       "type": "object",
       "properties": {
+        "disable": {
+          "description": "Blocklist of checks to skip (e.g. [\"trailing-whitespace\"]). Mutually exclusive with `enable`.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "default": null,
+          "items": {
+            "type": "string"
+          }
+        },
+        "enable": {
+          "description": "Allowlist of checks to run (e.g. [\"merge-conflict\", \"private-key\"]). Mutually exclusive with `disable`.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "default": null,
+          "items": {
+            "type": "string"
+          }
+        },
         "exclude": {
           "description": "Glob patterns of files to exclude from all healthcheck checks (e.g. \"vendor/**\", \"**/*.min.js\")",
           "type": "array",
@@ -99,6 +121,27 @@
           "items": {
             "type": "string"
           }
+        },
+        "git_hook": {
+          "description": "Git hook stage(s) to run healthcheck on (e.g. \"pre-commit\" or [\"pre-commit\", \"pre-push\"]).",
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false

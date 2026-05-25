@@ -6,12 +6,23 @@ pub mod end_of_file;
 pub mod mixed_line_ending;
 pub mod trailing_whitespace;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use glob::Pattern;
+use std::collections::HashSet;
 use std::path::Path;
 use std::process::Command;
 
-use crate::config;
+use crate::config::{self, HealthcheckSection};
+
+pub const ALL_CHECKS: &[&str] = &[
+    check_merge_conflict::NAME,
+    check_large_files::NAME,
+    detect_private_key::NAME,
+    check_case_conflict::NAME,
+    trailing_whitespace::NAME,
+    end_of_file::NAME,
+    mixed_line_ending::NAME,
+];
 
 pub struct Finding {
     pub file: String,
@@ -130,8 +141,104 @@ fn is_binary(path: &Path) -> bool {
     buf[..n].contains(&0)
 }
 
-pub fn run_all_checks(base_dir: &Path, staged_only: bool) -> Result<Vec<CheckResult>> {
-    let exclude_patterns = load_exclude_patterns(base_dir)?;
+pub fn load_section(base_dir: &Path) -> Result<Option<HealthcheckSection>> {
+    let Some(config_path) = ["plz.toml", ".plz.toml"]
+        .iter()
+        .map(|n| base_dir.join(n))
+        .find(|p| p.exists())
+    else {
+        return Ok(None);
+    };
+    Ok(config::load(&config_path)?.healthcheck)
+}
+
+fn exclude_patterns(section: Option<&HealthcheckSection>) -> Result<Vec<Pattern>> {
+    let Some(hc) = section else {
+        return Ok(Vec::new());
+    };
+    hc.exclude
+        .iter()
+        .map(|s| {
+            Pattern::new(s).with_context(|| format!("Invalid healthcheck exclude pattern \"{s}\""))
+        })
+        .collect()
+}
+
+fn validate_check_names(names: &[String], flag: &str) -> Result<Vec<&'static str>> {
+    let mut out = Vec::with_capacity(names.len());
+    for n in names {
+        let trimmed = n.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        match ALL_CHECKS.iter().find(|c| **c == trimmed) {
+            Some(c) => out.push(*c),
+            None => bail!(
+                "{flag}: unknown check \"{trimmed}\". Valid checks: {}",
+                ALL_CHECKS.join(", ")
+            ),
+        }
+    }
+    Ok(out)
+}
+
+/// Resolve which checks should run. CLI flags override config.
+/// `--only` wins over `enable`; `--skip` wins over `disable`.
+/// Returns an error if both `--only` and `--skip` are set.
+pub fn resolve_active_checks(
+    section: Option<&HealthcheckSection>,
+    cli_only: &[String],
+    cli_skip: &[String],
+) -> Result<HashSet<&'static str>> {
+    if !cli_only.is_empty() && !cli_skip.is_empty() {
+        bail!("--only and --skip cannot be used together");
+    }
+
+    if !cli_only.is_empty() {
+        let only = validate_check_names(cli_only, "--only")?;
+        if only.is_empty() {
+            bail!("--only: no check names provided");
+        }
+        return Ok(only.into_iter().collect());
+    }
+    if !cli_skip.is_empty() {
+        let skip: HashSet<&'static str> = validate_check_names(cli_skip, "--skip")?
+            .into_iter()
+            .collect();
+        return Ok(ALL_CHECKS
+            .iter()
+            .copied()
+            .filter(|c| !skip.contains(c))
+            .collect());
+    }
+
+    if let Some(hc) = section {
+        if let Some(ref enable) = hc.enable {
+            // Config is validated at load time; names must be known.
+            return Ok(enable
+                .iter()
+                .filter_map(|n| ALL_CHECKS.iter().find(|c| **c == n.as_str()).copied())
+                .collect());
+        }
+        if let Some(ref disable) = hc.disable {
+            let skip: HashSet<&str> = disable.iter().map(|s| s.as_str()).collect();
+            return Ok(ALL_CHECKS
+                .iter()
+                .copied()
+                .filter(|c| !skip.contains(*c))
+                .collect());
+        }
+    }
+    Ok(ALL_CHECKS.iter().copied().collect())
+}
+
+pub fn run_all_checks(
+    base_dir: &Path,
+    staged_only: bool,
+    section: Option<&HealthcheckSection>,
+    active: &HashSet<&'static str>,
+) -> Result<Vec<CheckResult>> {
+    let exclude_patterns = exclude_patterns(section)?;
     let collected = if staged_only {
         collect_staged_files(base_dir)?
     } else {
@@ -141,36 +248,30 @@ pub fn run_all_checks(base_dir: &Path, staged_only: bool) -> Result<Vec<CheckRes
         .into_iter()
         .filter(|f| !is_excluded(&f.path, &exclude_patterns))
         .collect();
-    let results = vec![
-        check_merge_conflict::run(base_dir, &files)?,
-        check_large_files::run(base_dir, &files)?,
-        detect_private_key::run(base_dir, &files)?,
-        check_case_conflict::run(&files)?,
-        trailing_whitespace::run(base_dir, &files)?,
-        end_of_file::run(base_dir, &files)?,
-        mixed_line_ending::run(base_dir, &files)?,
-    ];
-    Ok(results)
-}
 
-fn load_exclude_patterns(base_dir: &Path) -> Result<Vec<Pattern>> {
-    let Some(config_path) = ["plz.toml", ".plz.toml"]
-        .iter()
-        .map(|n| base_dir.join(n))
-        .find(|p| p.exists())
-    else {
-        return Ok(Vec::new());
-    };
-    let cfg = config::load(&config_path)?;
-    let Some(hc) = cfg.healthcheck else {
-        return Ok(Vec::new());
-    };
-    hc.exclude
-        .iter()
-        .map(|s| {
-            Pattern::new(s).with_context(|| format!("Invalid healthcheck exclude pattern \"{s}\""))
-        })
-        .collect()
+    let mut results = Vec::new();
+    if active.contains(check_merge_conflict::NAME) {
+        results.push(check_merge_conflict::run(base_dir, &files)?);
+    }
+    if active.contains(check_large_files::NAME) {
+        results.push(check_large_files::run(base_dir, &files)?);
+    }
+    if active.contains(detect_private_key::NAME) {
+        results.push(detect_private_key::run(base_dir, &files)?);
+    }
+    if active.contains(check_case_conflict::NAME) {
+        results.push(check_case_conflict::run(&files)?);
+    }
+    if active.contains(trailing_whitespace::NAME) {
+        results.push(trailing_whitespace::run(base_dir, &files)?);
+    }
+    if active.contains(end_of_file::NAME) {
+        results.push(end_of_file::run(base_dir, &files)?);
+    }
+    if active.contains(mixed_line_ending::NAME) {
+        results.push(mixed_line_ending::run(base_dir, &files)?);
+    }
+    Ok(results)
 }
 
 fn is_excluded(path: &str, patterns: &[Pattern]) -> bool {
@@ -205,8 +306,15 @@ pub fn print_results(results: &[CheckResult]) {
     }
 }
 
-pub fn run_healthcheck(base_dir: &Path, staged_only: bool) -> Result<()> {
-    let results = run_all_checks(base_dir, staged_only)?;
+pub fn run_healthcheck(
+    base_dir: &Path,
+    staged_only: bool,
+    only: &[String],
+    skip: &[String],
+) -> Result<()> {
+    let section = load_section(base_dir)?;
+    let active = resolve_active_checks(section.as_ref(), only, skip)?;
+    let results = run_all_checks(base_dir, staged_only, section.as_ref(), &active)?;
     print_results(&results);
     let any_failed = results.iter().any(|r| !r.passed);
     if any_failed {

@@ -3466,4 +3466,257 @@ mod healthcheck_tests {
             .assert()
             .failure();
     }
+
+    // -- enable / disable config + --only / --skip CLI flags --
+
+    fn write_trailing_ws_file(dir: &TempDir) {
+        // Trailing whitespace will fail trailing-whitespace, but not merge-conflict.
+        fs::write(dir.path().join("ws.txt"), "hello   \nworld\n").unwrap();
+        git_add_commit(dir);
+    }
+
+    #[test]
+    fn healthcheck_disable_in_config_skips_check() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        write_trailing_ws_file(&dir);
+        fs::write(
+            dir.path().join("plz.toml"),
+            "[healthcheck]\ndisable = [\"trailing-whitespace\"]\n",
+        )
+        .unwrap();
+
+        plz()
+            .arg("healthcheck")
+            .current_dir(dir.path())
+            .assert()
+            .success();
+    }
+
+    #[test]
+    fn healthcheck_enable_in_config_runs_only_listed() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        write_trailing_ws_file(&dir);
+        // Only merge-conflict is enabled — trailing whitespace should not fail the run.
+        fs::write(
+            dir.path().join("plz.toml"),
+            "[healthcheck]\nenable = [\"merge-conflict\"]\n",
+        )
+        .unwrap();
+
+        plz()
+            .arg("healthcheck")
+            .current_dir(dir.path())
+            .assert()
+            .success();
+    }
+
+    #[test]
+    fn healthcheck_enable_and_disable_together_fails() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        git_add_commit(&dir);
+        fs::write(
+            dir.path().join("plz.toml"),
+            "[healthcheck]\nenable = [\"merge-conflict\"]\ndisable = [\"trailing-whitespace\"]\n",
+        )
+        .unwrap();
+
+        plz()
+            .arg("healthcheck")
+            .current_dir(dir.path())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("either `enable` or `disable`"));
+    }
+
+    #[test]
+    fn healthcheck_unknown_check_name_in_config_fails() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        git_add_commit(&dir);
+        fs::write(
+            dir.path().join("plz.toml"),
+            "[healthcheck]\ndisable = [\"not-a-real-check\"]\n",
+        )
+        .unwrap();
+
+        plz()
+            .arg("healthcheck")
+            .current_dir(dir.path())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(
+                "unknown check \"not-a-real-check\"",
+            ));
+    }
+
+    #[test]
+    fn healthcheck_cli_skip_overrides() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        write_trailing_ws_file(&dir);
+
+        plz()
+            .arg("healthcheck")
+            .args(["--skip", "trailing-whitespace"])
+            .current_dir(dir.path())
+            .assert()
+            .success();
+    }
+
+    #[test]
+    fn healthcheck_cli_only_overrides_config_enable() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        write_trailing_ws_file(&dir);
+        // Config enables trailing-whitespace, but CLI --only forces a different check.
+        fs::write(
+            dir.path().join("plz.toml"),
+            "[healthcheck]\nenable = [\"trailing-whitespace\"]\n",
+        )
+        .unwrap();
+
+        plz()
+            .arg("healthcheck")
+            .args(["--only", "merge-conflict"])
+            .current_dir(dir.path())
+            .assert()
+            .success();
+    }
+
+    #[test]
+    fn healthcheck_cli_only_and_skip_together_fails() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        git_add_commit(&dir);
+
+        plz()
+            .arg("healthcheck")
+            .args(["--only", "merge-conflict", "--skip", "trailing-whitespace"])
+            .current_dir(dir.path())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("--only and --skip"));
+    }
+
+    #[test]
+    fn healthcheck_cli_only_unknown_fails() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        git_add_commit(&dir);
+
+        plz()
+            .arg("healthcheck")
+            .args(["--only", "bogus"])
+            .current_dir(dir.path())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("unknown check \"bogus\""));
+    }
+
+    #[test]
+    fn healthcheck_cli_only_empty_fails() {
+        // `--only ""` would otherwise silently run zero checks and exit 0.
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        git_add_commit(&dir);
+
+        plz()
+            .arg("healthcheck")
+            .args(["--only", ""])
+            .current_dir(dir.path())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("no check names provided"));
+    }
+
+    // -- [healthcheck] git_hook integration --
+
+    #[test]
+    fn healthcheck_git_hook_string_installs_single_stage() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(
+            dir.path().join("plz.toml"),
+            "[healthcheck]\ngit_hook = \"pre-commit\"\n",
+        )
+        .unwrap();
+
+        plz()
+            .args(["plz", "hooks", "install"])
+            .current_dir(dir.path())
+            .assert()
+            .success();
+
+        assert!(dir.path().join(".git/hooks/pre-commit").exists());
+    }
+
+    #[test]
+    fn healthcheck_git_hook_array_installs_multiple_stages() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(
+            dir.path().join("plz.toml"),
+            "[healthcheck]\ngit_hook = [\"pre-commit\", \"pre-push\"]\n",
+        )
+        .unwrap();
+
+        plz()
+            .args(["plz", "hooks", "install"])
+            .current_dir(dir.path())
+            .assert()
+            .success();
+
+        assert!(dir.path().join(".git/hooks/pre-commit").exists());
+        assert!(dir.path().join(".git/hooks/pre-push").exists());
+    }
+
+    #[test]
+    fn healthcheck_git_hook_unknown_stage_fails() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(
+            dir.path().join("plz.toml"),
+            "[healthcheck]\ngit_hook = \"not-a-real-stage\"\n",
+        )
+        .unwrap();
+
+        plz()
+            .args(["plz", "hooks", "install"])
+            .current_dir(dir.path())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("invalid git_hook"));
+    }
+
+    #[test]
+    fn healthcheck_hooks_run_dispatches_to_healthcheck() {
+        let dir = TempDir::new().unwrap();
+        git_init(&dir);
+        fs::write(
+            dir.path().join("plz.toml"),
+            "[healthcheck]\ngit_hook = \"pre-commit\"\n",
+        )
+        .unwrap();
+        // Stage a file with merge conflict markers.
+        fs::write(
+            dir.path().join("bad.txt"),
+            "<<<<<<< HEAD\nfoo\n=======\nbar\n>>>>>>> branch\n",
+        )
+        .unwrap();
+        process::Command::new("git")
+            .args(["add", "bad.txt"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+
+        plz()
+            .args(["plz", "hooks", "run", "pre-commit"])
+            .current_dir(dir.path())
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("bad.txt"));
+    }
 }

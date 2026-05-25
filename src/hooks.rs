@@ -9,6 +9,11 @@ use toml_edit::DocumentMut;
 const MANAGED_MARKER: &str = "# plz:managed - do not edit";
 const HOOKS_VERSION: u32 = 3;
 
+/// Synthetic task label used in `tasks_by_stage` to represent the healthcheck
+/// hook configured via `[healthcheck].git_hook`. Dispatched specially by
+/// `run_stage`.
+pub const HEALTHCHECK_LABEL: &str = "plz:healthcheck";
+
 pub fn find_git_hooks_dir(base_dir: &Path) -> Result<PathBuf> {
     let mut dir = base_dir;
     loop {
@@ -50,6 +55,16 @@ pub fn tasks_by_stage(config: &PlzConfig) -> BTreeMap<String, Vec<String>> {
                         .push(format!("{gname}:{tname}"));
                 }
             }
+        }
+    }
+    if let Some(ref hc) = config.healthcheck
+        && let Some(ref hooks) = hc.git_hook
+    {
+        for stage in &hooks.0 {
+            stages
+                .entry(stage.clone())
+                .or_default()
+                .push(HEALTHCHECK_LABEL.to_string());
         }
     }
     stages
@@ -184,7 +199,9 @@ pub fn run_stage(
     eprintln!("\x1b[36m🙏 Running {stage} hook ({names})\x1b[0m");
 
     for name in task_names {
-        if let Some((group, task)) = name.split_once(':') {
+        if name == HEALTHCHECK_LABEL {
+            crate::healthcheck::run_healthcheck(base_dir, true, &[], &[])?;
+        } else if let Some((group, task)) = name.split_once(':') {
             crate::runner::run_group_task(config, group, task, base_dir, interactive)?;
         } else {
             crate::runner::run_task(config, name, base_dir, interactive)?;

@@ -129,6 +129,15 @@ pub struct HealthcheckSection {
     /// Glob patterns of files to exclude from all healthcheck checks (e.g. "vendor/**", "**/*.min.js")
     #[serde(default)]
     pub exclude: Vec<String>,
+    /// Allowlist of checks to run (e.g. ["merge-conflict", "private-key"]). Mutually exclusive with `disable`.
+    #[serde(default)]
+    pub enable: Option<Vec<String>>,
+    /// Blocklist of checks to skip (e.g. ["trailing-whitespace"]). Mutually exclusive with `enable`.
+    #[serde(default)]
+    pub disable: Option<Vec<String>>,
+    /// Git hook stage(s) to run healthcheck on (e.g. "pre-commit" or ["pre-commit", "pre-push"]).
+    #[serde(default)]
+    pub git_hook: Option<StringOrVec>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -503,6 +512,33 @@ pub fn load(path: &Path) -> Result<PlzConfig> {
                     "Task \"{name}\" has invalid git_hook \"{hook}\". Valid hooks: {}",
                     VALID_GIT_HOOKS.join(", ")
                 );
+            }
+        }
+    }
+
+    // Validate [healthcheck] section
+    if let Some(ref hc) = config.healthcheck {
+        if hc.enable.is_some() && hc.disable.is_some() {
+            bail!("[healthcheck]: specify either `enable` or `disable`, not both");
+        }
+        for list in [&hc.enable, &hc.disable].into_iter().flatten() {
+            for name in list {
+                if !crate::healthcheck::ALL_CHECKS.contains(&name.as_str()) {
+                    bail!(
+                        "[healthcheck]: unknown check \"{name}\". Valid checks: {}",
+                        crate::healthcheck::ALL_CHECKS.join(", ")
+                    );
+                }
+            }
+        }
+        if let Some(ref hooks) = hc.git_hook {
+            for stage in &hooks.0 {
+                if !VALID_GIT_HOOKS.contains(&stage.as_str()) {
+                    bail!(
+                        "[healthcheck] has invalid git_hook \"{stage}\". Valid hooks: {}",
+                        VALID_GIT_HOOKS.join(", ")
+                    );
+                }
             }
         }
     }
