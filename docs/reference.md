@@ -321,23 +321,25 @@ check_for_updates = true
 `plz healthcheck` runs Rust-native code health checks on any git repo. No `plz.toml` required.
 
 ```bash
-plz healthcheck            # check all tracked files
-plz healthcheck --staged   # check only files staged for commit
+plz healthcheck                              # check all tracked files
+plz healthcheck --staged                     # check only files staged for commit
+plz healthcheck --only merge-conflict        # run a single check
+plz healthcheck --skip trailing-whitespace   # run everything except one
 ```
 
-`--staged` is useful in pre-commit hooks where you only want to validate what's about to be committed.
+`--staged` is useful in pre-commit hooks where you only want to validate what's about to be committed. `--only` and `--skip` accept comma-separated check names and cannot be combined.
 
 ### Checks
 
-| Check | What it detects |
-|-------|----------------|
-| Check merge conflict markers | `<<<<<<<`, `=======`, `>>>>>>>` at line start |
-| Check large files (>500KB) | Files exceeding 500KB in the git index |
-| Detect private keys | `BEGIN *PRIVATE KEY` headers |
-| Check case conflicts | Filenames that collide case-insensitively |
-| Trailing whitespace | Lines ending in spaces or tabs |
-| End of file newline | Files missing a final newline |
-| Mixed line endings | Files with both `\r\n` and `\n` |
+| Check | Identifier | What it detects |
+|-------|-----------|----------------|
+| Check merge conflict markers | `merge-conflict` | `<<<<<<<`, `=======`, `>>>>>>>` at line start |
+| Check large files (>500KB) | `large-files` | Files exceeding 500KB in the git index |
+| Detect private keys | `private-key` | `BEGIN *PRIVATE KEY` headers |
+| Check case conflicts | `case-conflict` | Filenames that collide case-insensitively |
+| Trailing whitespace | `trailing-whitespace` | Lines ending in spaces or tabs |
+| End of file newline | `end-of-file` | Files missing a final newline |
+| Mixed line endings | `mixed-line-ending` | Files with both `\r\n` and `\n` |
 
 Binary files are automatically skipped for content checks. Exit code is 1 if any check fails.
 
@@ -370,12 +372,32 @@ exclude = [
 ]
 ```
 
+### Selecting which checks run
+
+Use `enable` (allowlist) or `disable` (blocklist) under `[healthcheck]` to control which checks run by default. They're mutually exclusive — pick one. CLI flags `--only` and `--skip` override the config for a single run.
+
+```toml
+[healthcheck]
+disable = ["trailing-whitespace", "end-of-file"]
+# or, equivalently, to opt in:
+# enable = ["merge-conflict", "private-key", "case-conflict"]
+```
+
 ### Using with git hooks
 
-Wire healthcheck into a pre-commit hook via `plz.toml`. Use `--staged` so only files about to be committed are checked:
+The simplest way to run healthcheck on a git stage is the `git_hook` field on `[healthcheck]`. Accepts a single stage or an array of stages — `plz hooks install` will create each one, and the hook runs healthcheck with `--staged`.
+
+```toml
+[healthcheck]
+git_hook = "pre-commit"
+# or multiple stages:
+# git_hook = ["pre-commit", "pre-push"]
+```
+
+For more control (custom flags, wrapping with other commands), wire healthcheck into a task instead:
 
 ```toml
 [tasks.healthcheck]
-run = "plz healthcheck --staged"
+run = "plz healthcheck --staged --skip mixed-line-ending"
 git_hook = "pre-commit"
 ```

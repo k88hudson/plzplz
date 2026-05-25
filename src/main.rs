@@ -63,6 +63,12 @@ enum PlzCommand {
         /// Only check files staged for commit (instead of all tracked files)
         #[arg(long)]
         staged: bool,
+        /// Comma-separated list of checks to run (e.g. merge-conflict,private-key)
+        #[arg(long, value_delimiter = ',')]
+        only: Vec<String>,
+        /// Comma-separated list of checks to skip (e.g. trailing-whitespace,end-of-file)
+        #[arg(long, value_delimiter = ',')]
+        skip: Vec<String>,
     },
 }
 
@@ -164,8 +170,8 @@ const HELP_COMMANDS: &[HelpEntry] = &[
         description: "Update plz to the latest version",
     },
     HelpEntry {
-        usage: "healthcheck [--staged]",
-        description: "Run code health checks on your repo (use --staged to check only staged files)",
+        usage: "healthcheck [--staged] [--only <checks>] [--skip <checks>]",
+        description: "Run code health checks on your repo (use --staged for staged files, --only/--skip to filter)",
     },
     HelpEntry {
         usage: "plz",
@@ -319,9 +325,9 @@ fn main() -> Result<()> {
             }
             Some(PlzCommand::Cheatsheet) => return init::print_cheatsheet(),
             Some(PlzCommand::Update) => return init::self_update(),
-            Some(PlzCommand::Healthcheck { staged }) => {
+            Some(PlzCommand::Healthcheck { staged, only, skip }) => {
                 let base_dir = std::env::current_dir()?;
-                return healthcheck::run_healthcheck(&base_dir, *staged);
+                return healthcheck::run_healthcheck(&base_dir, *staged, only, skip);
             }
             Some(PlzCommand::Hooks { hook_command }) => {
                 let config_path =
@@ -505,8 +511,39 @@ fn try_plz_subcommand(task: &[String]) -> Option<Result<()>> {
                 Ok(d) => d,
                 Err(e) => return Some(Err(e.into())),
             };
-            let staged = task.iter().skip(1).any(|a| a == "--staged");
-            Some(healthcheck::run_healthcheck(&base_dir, staged))
+            let mut staged = false;
+            let mut only: Vec<String> = Vec::new();
+            let mut skip: Vec<String> = Vec::new();
+            let args: Vec<&str> = task.iter().skip(1).map(|s| s.as_str()).collect();
+            let mut i = 0;
+            while i < args.len() {
+                match args[i] {
+                    "--staged" => staged = true,
+                    "--only" => {
+                        i += 1;
+                        if let Some(v) = args.get(i) {
+                            only.extend(v.split(',').map(|s| s.to_string()));
+                        }
+                    }
+                    s if s.starts_with("--only=") => {
+                        only.extend(s[7..].split(',').map(|s| s.to_string()));
+                    }
+                    "--skip" => {
+                        i += 1;
+                        if let Some(v) = args.get(i) {
+                            skip.extend(v.split(',').map(|s| s.to_string()));
+                        }
+                    }
+                    s if s.starts_with("--skip=") => {
+                        skip.extend(s[7..].split(',').map(|s| s.to_string()));
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+            Some(healthcheck::run_healthcheck(
+                &base_dir, staged, &only, &skip,
+            ))
         }
         "hooks" => {
             let config_path = match find_config() {
