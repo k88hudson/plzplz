@@ -258,6 +258,37 @@ run = "cargo build"
     }
 
     #[test]
+    fn extract_comment_blank_line_terminates() {
+        // A blank line separates a section marker from the actual description.
+        // Only the contiguous comment block immediately preceding the task should be used.
+        let prefix = "# ──────────────────────\n# Quality\n# ──────────────────────\n\n# Type-check backend + frontend\n";
+        assert_eq!(
+            config::extract_comment(prefix),
+            Some("Type-check backend + frontend".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_comment_ignores_trailing_blanks() {
+        assert_eq!(
+            config::extract_comment("# Hello\n\n"),
+            Some("Hello".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_comment_strips_multiple_hashes() {
+        assert_eq!(
+            config::extract_comment("## Hello\n"),
+            Some("Hello".to_string())
+        );
+        assert_eq!(
+            config::extract_comment("### Section\n"),
+            Some("Section".to_string())
+        );
+    }
+
+    #[test]
     fn extends_env_applies_to_all_tasks() {
         let dir = TempDir::new().unwrap();
         let path = write_config(

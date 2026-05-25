@@ -742,21 +742,26 @@ impl PlzConfig {
 }
 
 pub fn extract_comment(prefix: &str) -> Option<String> {
-    let lines: Vec<&str> = prefix
-        .lines()
-        .filter_map(|line| {
-            let trimmed = line.trim();
-            if trimmed.starts_with('#') {
-                Some(trimmed.trim_start_matches('#').trim())
-            } else {
-                None
+    let mut lines: Vec<&str> = Vec::new();
+    for line in prefix.lines().rev() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            if lines.is_empty() {
+                continue;
             }
-        })
-        .collect();
+            break;
+        }
+        if trimmed.starts_with('#') {
+            lines.push(trimmed.trim_start_matches('#').trim());
+        } else {
+            break;
+        }
+    }
 
     if lines.is_empty() {
         None
     } else {
+        lines.reverse();
         Some(lines.join(" "))
     }
 }
