@@ -246,21 +246,30 @@ fn run_task_core(
         if let Some(ref run) = task.run {
             if run.0.len() == 1 {
                 let cmd = &run.0[0];
-                let wrapped = if extra_args.is_empty() {
-                    wrap(cmd)
+                // Resolve plz: refs before env wrapping so the referenced
+                // task runs with its own env, not the referencer's
+                if let Some(task_ref) = parse_task_ref(cmd) {
+                    let (ref_task, display) = resolve_task_ref(config, &task_ref)?;
+                    run_task_core(
+                        config,
+                        ref_task,
+                        &display,
+                        base_dir,
+                        interactive,
+                        true,
+                        extra_args,
+                        completed,
+                    )?;
                 } else {
-                    let args_str = shlex::try_join(extra_args.iter().map(|s| s.as_str()))
-                        .map_err(|e| anyhow::anyhow!("Failed to escape arguments: {e}"))?;
-                    format!("{} {args_str}", wrap(cmd))
-                };
-                run_command_or_ref(
-                    config,
-                    &wrapped,
-                    &work_dir,
-                    base_dir,
-                    interactive,
-                    completed,
-                )?;
+                    let wrapped = if extra_args.is_empty() {
+                        wrap(cmd)
+                    } else {
+                        let args_str = shlex::try_join(extra_args.iter().map(|s| s.as_str()))
+                            .map_err(|e| anyhow::anyhow!("Failed to escape arguments: {e}"))?;
+                        format!("{} {args_str}", wrap(cmd))
+                    };
+                    exec_shell(&wrapped, &work_dir)?;
+                }
             } else {
                 run_serial_commands(
                     config,
@@ -333,20 +342,6 @@ fn run_ref_task(
         &[],
         completed,
     )
-}
-
-fn run_command_or_ref(
-    config: &PlzConfig,
-    cmd: &str,
-    work_dir: &Path,
-    base_dir: &Path,
-    interactive: bool,
-    completed: &CompletedDeps,
-) -> Result<()> {
-    if let Some(task_ref) = parse_task_ref(cmd) {
-        return run_ref_task(config, &task_ref, base_dir, interactive, true, completed);
-    }
-    exec_shell(cmd, work_dir)
 }
 
 fn exec_shell(cmd: &str, work_dir: &Path) -> Result<()> {
@@ -452,8 +447,7 @@ fn run_serial_commands(
     let mut failures: Vec<DeferredFailure> = Vec::new();
 
     for cmd in cmds {
-        let wrapped = wrap(cmd);
-        if let Some(task_ref) = parse_task_ref(&wrapped) {
+        if let Some(task_ref) = parse_task_ref(cmd) {
             let display = match &task_ref {
                 TaskRef::TopLevel(n) => n.clone(),
                 TaskRef::Group(g, t) => format!("{g}:{t}"),
@@ -469,7 +463,7 @@ fn run_serial_commands(
                 }
             }
         } else {
-            exec_shell(&wrapped, work_dir)?;
+            exec_shell(&wrap(cmd), work_dir)?;
         }
     }
 
@@ -496,10 +490,10 @@ fn run_parallel_commands(
     let mut plz_refs: Vec<TaskRef> = Vec::new();
 
     for cmd in cmds {
-        let wrapped = wrap(cmd);
-        if let Some(task_ref) = parse_task_ref(&wrapped) {
+        if let Some(task_ref) = parse_task_ref(cmd) {
             plz_refs.push(task_ref);
         } else {
+            let wrapped = wrap(cmd);
             eprintln!("→ {wrapped} &");
             let child = Command::new("/bin/sh")
                 .arg("-c")

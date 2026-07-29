@@ -1364,6 +1364,52 @@ run = "touch {}"
     }
 
     #[test]
+    fn task_refs_resolve_when_referencer_has_tool_env() {
+        // Regression: env wrapping ran before ref resolution, so "plz:inner"
+        // became "pnpm exec plz:inner" and executed as a shell command
+        let dir = TempDir::new().unwrap();
+        let single = dir.path().join("single.txt");
+        let serial = dir.path().join("serial.txt");
+        let parallel = dir.path().join("parallel.txt");
+        let cfg = load_config(
+            &dir,
+            &format!(
+                r#"
+[tasks.single]
+run = "plz:touch_single"
+env = "pnpm"
+
+[tasks.serial]
+run_serial = ["plz:touch_serial"]
+env = "pnpm"
+
+[tasks.parallel]
+run_parallel = ["plz:touch_parallel"]
+env = "pnpm"
+
+[tasks.touch_single]
+run = "touch {}"
+
+[tasks.touch_serial]
+run = "touch {}"
+
+[tasks.touch_parallel]
+run = "touch {}"
+"#,
+                single.display(),
+                serial.display(),
+                parallel.display()
+            ),
+        );
+        runner::run_task(&cfg, "single", dir.path(), false).unwrap();
+        runner::run_task(&cfg, "serial", dir.path(), false).unwrap();
+        runner::run_task(&cfg, "parallel", dir.path(), false).unwrap();
+        assert!(single.exists());
+        assert!(serial.exists());
+        assert!(parallel.exists());
+    }
+
+    #[test]
     fn run_group_task_simple() {
         let dir = TempDir::new().unwrap();
         let marker = dir.path().join("group_marker.txt");
@@ -2421,6 +2467,19 @@ mod cli_tests {
             .assert()
             .success()
             .stdout(predicate::str::contains("Run a task from plz.toml"));
+    }
+
+    #[test]
+    fn cli_version_flag() {
+        let dir = TempDir::new().unwrap();
+        for flag in ["--version", "-V"] {
+            plz()
+                .arg(flag)
+                .current_dir(dir.path())
+                .assert()
+                .success()
+                .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
+        }
     }
 
     #[test]

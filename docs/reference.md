@@ -119,6 +119,8 @@ Reference group tasks with `plz:group:task`:
 run_parallel = ["plz:ui:build", "plz:api:build"]
 ```
 
+Each referenced task runs with its own `env`. The referencing task's `env` wrapper only applies to plain command entries, not `plz:` references.
+
 ### Dependencies
 
 Declare prerequisite tasks with `depends`. Dependencies run before the task, in order. Shared dependencies across tasks only run once per invocation.

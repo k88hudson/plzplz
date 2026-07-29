@@ -188,6 +188,10 @@ const HELP_OPTIONS: &[HelpEntry] = &[
         usage: "-h, --help",
         description: "Print help",
     },
+    HelpEntry {
+        usage: "-V, --version",
+        description: "Print version",
+    },
 ];
 
 enum ResolvedTask {
@@ -308,6 +312,10 @@ fn main() -> Result<()> {
         let args: Vec<String> = env::args().collect();
         if args.len() == 2 && (args[1] == "--help" || args[1] == "-h" || args[1] == "help") {
             print!("{}", format_help());
+            return Ok(());
+        }
+        if args.len() == 2 && (args[1] == "--version" || args[1] == "-V") {
+            println!("plz {}", env!("CARGO_PKG_VERSION"));
             return Ok(());
         }
     }
