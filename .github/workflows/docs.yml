@@ -19,15 +19,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4
+      - run: corepack enable
       - uses: actions/setup-node@v6
         with:
           node-version: lts/*
           cache: pnpm
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
       - run: pnpm docs:build
-      - name: Copy installer script to install.sh
-        run: curl -fsSL https://github.com/k88hudson/plzplz/releases/latest/download/plzplz-installer.sh -o docs/.vitepress/dist/install.sh
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs/.vitepress/dist
