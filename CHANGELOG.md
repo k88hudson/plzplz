@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.21](https://github.com/k88hudson/plzplz/compare/v0.0.20...v0.0.21) - 2026-08-05
+
+### Fixed
+
+- resolve plz: refs before env wrapping, add --version flag
+
+### Other
+
+- update dependencies
+- use --locked for cargo install in CI, docs, and install task
+- update docs toolchain (vitepress 2, corepack, frozen lockfile, installer shim)
+- pin actions to commit SHAs, add dependabot and cargo-deny audit
+- replace release-plz with local git-cliff release flow
+- update to pnpm 11
+- update cargo-dist to 0.32, enable GitHub artifact attestations
+
 ## [0.0.20](https://github.com/k88hudson/plzplz/compare/v0.0.19...v0.0.20) - 2026-05-25
 
 ### Added
