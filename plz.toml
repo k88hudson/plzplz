@@ -33,6 +33,10 @@ fail_hook = { suggest_command = "cargo fmt" }
 run_parallel = ["plz healthcheck", "plz format", "plz lint"]
 git_hook = "pre-commit"
 
+# Cut a release: plz version [patch|minor|major|X.Y.Z]
+[tasks.version]
+run = "uv run scripts/release.py"
+
 # Install locally
 [tasks.install]
 run_serial = ["cargo install --locked --path . --force", "plz hooks install"]

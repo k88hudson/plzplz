@@ -1,0 +1,31 @@
+# git-cliff config: https://git-cliff.org/docs/configuration
+# Matches the existing Keep a Changelog format in CHANGELOG.md
+
+[changelog]
+trim = true
+body = """
+## [{{ version | trim_start_matches(pat="v") }}]\
+{% if previous.version %}(https://github.com/k88hudson/plzplz/compare/{{ previous.version }}...{{ version }}){% endif %} \
+- {{ timestamp | date(format="%Y-%m-%d") }}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group }}
+{% for commit in commits %}
+- {% if commit.scope %}*({{ commit.scope }})* {% endif %}{{ commit.message }}
+{%- endfor %}
+{% endfor %}
+"""
+
+[git]
+conventional_commits = true
+filter_unconventional = false
+tag_pattern = "v[0-9]+\\.[0-9]+\\.[0-9]+"
+commit_preprocessors = [
+  # Turn (#123) into a PR link
+  { pattern = '\(#([0-9]+)\)', replace = "([#${1}](https://github.com/k88hudson/plzplz/pull/${1}))" },
+]
+commit_parsers = [
+  { message = "^chore: release", skip = true },
+  { message = "^feat", group = "Added" },
+  { message = "^fix", group = "Fixed" },
+  { message = ".*", group = "Other" },
+]
