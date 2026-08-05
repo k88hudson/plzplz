@@ -35,7 +35,7 @@ git_hook = "pre-commit"
 
 # Install locally
 [tasks.install]
-run_serial = ["cargo install --path . --force", "plz hooks install"]
+run_serial = ["cargo install --locked --path . --force", "plz hooks install"]
 
 # Docs: start dev server
 [taskgroup.docs.dev]

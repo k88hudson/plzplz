@@ -19,7 +19,7 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - run: cargo install --path .
+      - run: cargo install --locked --path .
       - run: plz check
       - run: plz test
 

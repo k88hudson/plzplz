@@ -27,7 +27,7 @@ uv tool install plzplz
 ```
 
 ```cargo
-cargo install plzplz
+cargo install --locked plzplz
 ```
 
 :::

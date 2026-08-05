@@ -1,7 +1,7 @@
 # plzplz
 
 ```bash
-cargo install plzplz
+cargo install --locked plzplz
 ```
 
 A simple cross-platform task runner with helpful defaults. Tasks are stored
