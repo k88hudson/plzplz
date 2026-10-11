@@ -40,10 +40,10 @@ Require a minimum version of plz for your project. If the running version doesn'
 
 ```toml
 [plz]
-version = ">=0.1.0"
+version = ">=0.0.21"
 ```
 
-The value is a [semver version requirement](https://docs.rs/semver/latest/semver/struct.VersionReq.html) (e.g. `">=0.1.0"`, `"^0.2"`, `"~1.0"`).
+The value is a [semver version requirement](https://docs.rs/semver/latest/semver/struct.VersionReq.html) (e.g. `">=0.0.21"`, `"^0.2"`, `"~1.0"`).
 
 ### Unknown key warnings
 
