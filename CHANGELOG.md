@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.22](https://github.com/k88hudson/plzplz/compare/v0.0.21...v0.0.22) - 2026-10-11
+
+### Fixed
+
+- account for wrapped lines when redrawing interactive prompts
+
+### Other
+
+- update dependencies, fix rustls and nanoid advisories ([#38](https://github.com/k88hudson/plzplz/pull/38))
+- drop version field from cheatsheet, fix version example ([#20](https://github.com/k88hudson/plzplz/pull/20))
+
 ## [0.0.21](https://github.com/k88hudson/plzplz/compare/v0.0.20...v0.0.21) - 2026-08-05
 
 ### Fixed
