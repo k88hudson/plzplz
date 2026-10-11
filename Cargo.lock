@@ -1510,6 +1510,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml_edit",
+ "unicode-width 0.2.2",
 ]
 
 [[package]]

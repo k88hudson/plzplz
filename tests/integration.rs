@@ -2880,6 +2880,48 @@ run = "echo hello"
     }
 }
 
+mod utils_tests {
+    use plzplz::utils::{rows_for_line, visible_width};
+
+    #[test]
+    fn visible_width_strips_ansi_sequences() {
+        assert_eq!(visible_width("plain"), 5);
+        assert_eq!(
+            visible_width("\x1b[36m\u{25c6}\x1b[0m  Which templates?"),
+            19
+        );
+        assert_eq!(visible_width("\x1b[1mbold\x1b[0m \x1b[2mdim\x1b[0m"), 8);
+        assert_eq!(visible_width("\x1b[38;5;208mcolor\x1b[0m"), 5);
+        assert_eq!(visible_width(""), 0);
+    }
+
+    #[test]
+    fn visible_width_counts_wide_characters() {
+        assert_eq!(visible_width("日本"), 4);
+    }
+
+    #[test]
+    fn rows_for_line_accounts_for_wrapping() {
+        assert_eq!(rows_for_line("", 80), 1);
+        assert_eq!(rows_for_line(&"x".repeat(79), 80), 1);
+        assert_eq!(rows_for_line(&"x".repeat(80), 80), 1);
+        assert_eq!(rows_for_line(&"x".repeat(81), 80), 2);
+        assert_eq!(rows_for_line(&"x".repeat(160), 80), 2);
+        assert_eq!(rows_for_line(&"x".repeat(161), 80), 3);
+    }
+
+    #[test]
+    fn rows_for_line_ignores_escape_codes_when_wrapping() {
+        let line = format!("\x1b[36m\u{2502}\x1b[0m  \x1b[1m{}\x1b[0m", "x".repeat(76));
+        assert_eq!(rows_for_line(&line, 80), 1);
+    }
+
+    #[test]
+    fn rows_for_line_handles_zero_width_terminal() {
+        assert_eq!(rows_for_line("abc", 0), 3);
+    }
+}
+
 mod healthcheck_tests {
     use assert_cmd::Command;
     use plzplz::healthcheck::collect_files;

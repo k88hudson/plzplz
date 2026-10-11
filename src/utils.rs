@@ -13,6 +13,80 @@ pub fn fuzzy_match(query: &str, text: &str) -> bool {
     chars.peek().is_none()
 }
 
+/// Display width of a string once ANSI escape sequences are stripped.
+pub fn visible_width(s: &str) -> usize {
+    use unicode_width::UnicodeWidthStr;
+    let mut plain = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next();
+            // Skip CSI parameter and intermediate bytes up to the final byte
+            for c in chars.by_ref() {
+                if ('\x40'..='\x7e').contains(&c) {
+                    break;
+                }
+            }
+        } else {
+            plain.push(c);
+        }
+    }
+    plain.width()
+}
+
+/// Number of terminal rows a single logical line occupies once wrapped to
+/// `cols`. Assumes deferred wrap, so a line exactly `cols` wide takes one row.
+pub fn rows_for_line(s: &str, cols: usize) -> u16 {
+    let width = visible_width(s);
+    let cols = cols.max(1);
+    if width == 0 {
+        1
+    } else {
+        ((width - 1) / cols + 1).min(u16::MAX as usize) as u16
+    }
+}
+
+/// Buffers the lines of a redrawable prompt and tracks the number of terminal
+/// rows they occupy, so the next redraw can move the cursor back far enough
+/// even when lines wrap.
+struct Frame {
+    buf: String,
+    rows: u16,
+    cols: usize,
+}
+
+impl Frame {
+    fn new() -> Self {
+        let cols = crossterm::terminal::size()
+            .map(|(c, _)| c as usize)
+            .unwrap_or(80)
+            .max(1);
+        Self {
+            buf: String::new(),
+            rows: 0,
+            cols,
+        }
+    }
+
+    fn line(&mut self, s: &str) {
+        self.rows = self.rows.saturating_add(rows_for_line(s, self.cols));
+        self.buf.push_str(s);
+        self.buf.push_str("\r\n");
+    }
+
+    /// Erase the previous frame and write this one. Returns the row count to
+    /// pass back in on the next call.
+    fn flush(self, prev_rows: u16) -> Result<u16> {
+        let mut out = std::io::stdout();
+        if prev_rows > 0 {
+            write!(out, "\x1b[{}A\r\x1b[J", prev_rows)?;
+        }
+        out.write_all(self.buf.as_bytes())?;
+        out.flush()?;
+        Ok(self.rows)
+    }
+}
+
 #[derive(Clone)]
 pub struct PickItem {
     pub label: String,
@@ -34,7 +108,6 @@ pub fn multiselect(
     required: bool,
 ) -> Result<Option<Vec<usize>>> {
     use crossterm::{event, terminal};
-    use std::io::stdout;
 
     terminal::enable_raw_mode()?;
     let result = (|| -> Result<Option<Vec<usize>>> {
@@ -42,14 +115,8 @@ pub fn multiselect(
         let mut prev_lines: u16 = 0;
 
         let render = |items: &[MultiSelectItem], cursor: usize, prev_lines: u16| -> Result<u16> {
-            let mut out = stdout();
-            if prev_lines > 0 {
-                write!(out, "\x1b[{}A\r", prev_lines)?;
-                write!(out, "\x1b[J")?;
-            }
-            let mut lines: u16 = 0;
-            write!(out, "\x1b[36m◆\x1b[0m  {prompt}\r\n")?;
-            lines += 1;
+            let mut frame = Frame::new();
+            frame.line(&format!("\x1b[36m◆\x1b[0m  {prompt}"));
             for (i, item) in items.iter().enumerate() {
                 let hint = if item.hint.is_empty() {
                     String::new()
@@ -62,24 +129,20 @@ pub fn multiselect(
                     "◻"
                 };
                 if i == cursor {
-                    write!(
-                        out,
-                        "\x1b[36m│\x1b[0m  {checkbox} \x1b[1m{}\x1b[0m{hint}\r\n",
+                    frame.line(&format!(
+                        "\x1b[36m│\x1b[0m  {checkbox} \x1b[1m{}\x1b[0m{hint}",
                         item.label
-                    )?;
+                    ));
                 } else {
-                    write!(out, "\x1b[36m│\x1b[0m  {checkbox} {}{hint}\r\n", item.label)?;
+                    frame.line(&format!(
+                        "\x1b[36m│\x1b[0m  {checkbox} {}{hint}",
+                        item.label
+                    ));
                 }
-                lines += 1;
             }
-            write!(out, "\x1b[36m│\x1b[0m\r\n")?;
-            write!(
-                out,
-                "\x1b[36m└\x1b[0m  \x1b[2mspace=toggle / enter=confirm / esc=cancel\x1b[0m\r\n"
-            )?;
-            lines += 2;
-            out.flush()?;
-            Ok(lines)
+            frame.line("\x1b[36m│\x1b[0m");
+            frame.line("\x1b[36m└\x1b[0m  \x1b[2mspace=toggle / enter=confirm / esc=cancel\x1b[0m");
+            frame.flush(prev_lines)
         };
 
         loop {
@@ -140,7 +203,6 @@ pub fn multiselect(
 
 pub fn pick_from_list(items: &[PickItem], footer_hint: &str) -> Result<Option<usize>> {
     use crossterm::{event, terminal};
-    use std::io::stdout;
 
     let filtered = |query: &str| -> Vec<usize> {
         if query.is_empty() {
@@ -168,21 +230,11 @@ pub fn pick_from_list(items: &[PickItem], footer_hint: &str) -> Result<Option<us
                 cursor_idx = matches.len().saturating_sub(1);
             }
 
-            let mut out = stdout();
-
-            if prev_lines > 0 {
-                write!(out, "\x1b[{}A\r", prev_lines)?;
-                write!(out, "\x1b[J")?;
-            }
-
-            let mut lines: u16 = 0;
-
-            write!(
-                out,
-                "\x1b[36m◆\x1b[0m  Type the name of a task: \x1b[4m{}\x1b[0m\r\n",
+            let mut frame = Frame::new();
+            frame.line(&format!(
+                "\x1b[36m◆\x1b[0m  Type the name of a task: \x1b[4m{}\x1b[0m",
                 query
-            )?;
-            lines += 1;
+            ));
 
             for (i, &idx) in matches.iter().enumerate() {
                 let item = &items[idx];
@@ -192,39 +244,32 @@ pub fn pick_from_list(items: &[PickItem], footer_hint: &str) -> Result<Option<us
                     format!(" \x1b[2m{}\x1b[0m", item.description)
                 };
                 if i == cursor_idx {
-                    write!(
-                        out,
-                        "\x1b[36m│\x1b[0m  \x1b[36m●\x1b[0m \x1b[1m{}\x1b[0m{desc}\r\n",
+                    frame.line(&format!(
+                        "\x1b[36m│\x1b[0m  \x1b[36m●\x1b[0m \x1b[1m{}\x1b[0m{desc}",
                         item.label
-                    )?;
+                    ));
                 } else {
-                    write!(out, "\x1b[36m│\x1b[0m  ○ {}{desc}\r\n", item.label)?;
+                    frame.line(&format!("\x1b[36m│\x1b[0m  ○ {}{desc}", item.label));
                 }
-                lines += 1;
             }
 
             if matches.is_empty() {
-                write!(out, "\x1b[36m│\x1b[0m  \x1b[2mNo matches\x1b[0m\r\n")?;
-                lines += 1;
+                frame.line("\x1b[36m│\x1b[0m  \x1b[2mNo matches\x1b[0m");
             }
 
             if let Some(&idx) = matches.get(cursor_idx)
                 && let Some(ref preview) = items[idx].preview
             {
-                write!(out, "\x1b[36m│\x1b[0m\r\n")?;
-                lines += 1;
+                frame.line("\x1b[36m│\x1b[0m");
                 for line in preview.lines() {
-                    write!(out, "\x1b[36m│\x1b[0m  \x1b[33m{line}\x1b[0m\r\n")?;
-                    lines += 1;
+                    frame.line(&format!("\x1b[36m│\x1b[0m  \x1b[33m{line}\x1b[0m"));
                 }
             }
 
-            write!(out, "\x1b[36m│\x1b[0m\r\n")?;
-            write!(out, "\x1b[36m└\x1b[0m  \x1b[2m{footer_hint}\x1b[0m\r\n")?;
-            lines += 2;
+            frame.line("\x1b[36m│\x1b[0m");
+            frame.line(&format!("\x1b[36m└\x1b[0m  \x1b[2m{footer_hint}\x1b[0m"));
 
-            out.flush()?;
-            prev_lines = lines;
+            prev_lines = frame.flush(prev_lines)?;
 
             let key = loop {
                 if let event::Event::Key(key) = event::read()? {
