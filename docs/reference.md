@@ -161,12 +161,12 @@ run = "pnpm dev"
 
 ### Environment wrappers
 
-Wrap commands with a package manager using `tool_env`:
+Wrap commands with a package manager using `env`:
 
 ```toml
 [tasks.vitest]
 run = "vitest"
-tool_env = "pnpm"
+env = "pnpm"
 ```
 
 Supported values: `pnpm` (uses `pnpm exec`), `npm` (uses `npx`), `uv` (uses `uv run`), `uvx` (uses `uvx`).
@@ -221,21 +221,26 @@ Supported stages: `pre-commit`, `pre-push`, `commit-msg`, `post-commit`, `post-m
 
 ### Extends (global defaults)
 
-Set default `env` and `dir` for all tasks:
+Set a default `env` (tool wrapper) and `dir` for all tasks:
 
 ```toml
 [extends]
-env = { NODE_ENV = "production" }
+env = "pnpm"
 dir = "packages/app"
 
 [tasks.build]
-run = "pnpm build"
+run = "vite build"
 # inherits env and dir from [extends]
 
 [tasks.dev]
-run = "pnpm dev"
+run = "vite"
 dir = "."
 # per-task dir overrides [extends]
+
+[tasks.setup]
+run = "cargo build"
+env = ""
+# empty string opts out of the inherited env
 ```
 
 ### Variables
@@ -285,22 +290,22 @@ run = "pnpm docs:dev"
 Run with:
 
 ```bash
-plz docs:build
-plz docs:dev
+plz docs build
+plz docs dev
 ```
 
 Groups can have their own extends that cascade (top-level extends → group extends → task):
 
 ```toml
 [extends]
-env = { CI = "true" }
+env = "pnpm"
 
 [taskgroup.docs.extends]
 dir = "docs"
 
 [taskgroup.docs.build]
-run = "pnpm build"
-# inherits CI=true from top-level, dir=docs from group
+run = "vitepress build"
+# inherits env=pnpm from top-level, dir=docs from group
 ```
 
 ## Settings

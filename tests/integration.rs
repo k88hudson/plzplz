@@ -1097,6 +1097,32 @@ run = "echo hello"
             "Expected no warnings, got: {warnings:?}"
         );
     }
+
+    #[test]
+    fn cheatsheet_examples_are_valid() {
+        let cheatsheet = include_str!("../src/cheatsheet.txt");
+        for section in cheatsheet.split("## ").skip(1) {
+            let (title, body) = section.split_once('\n').unwrap();
+            // Sections without a table header are standalone key snippets (e.g. fail_hook)
+            let snippets: Vec<String> = if body.lines().any(|l| l.starts_with('[')) {
+                vec![body.to_string()]
+            } else {
+                body.lines()
+                    .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+                    .map(|l| format!("[tasks.example]\nrun = \"true\"\n{l}\n"))
+                    .collect()
+            };
+            for snippet in snippets {
+                let doc: toml_edit::DocumentMut = snippet
+                    .parse()
+                    .unwrap_or_else(|e| panic!("{title}: invalid TOML: {e}"));
+                let warnings = config::warn_unknown_keys(&doc);
+                assert!(warnings.is_empty(), "{title}: {warnings:?}");
+                toml_edit::de::from_document::<config::PlzConfig>(doc)
+                    .unwrap_or_else(|e| panic!("{title}: {e}"));
+            }
+        }
+    }
 }
 
 mod runner_tests {

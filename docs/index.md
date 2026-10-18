@@ -56,5 +56,5 @@ plz format
 - **Failure hooks** — suggest commands, show messages, or run scripts on failure
 - **Task groups** — organize related tasks with `[taskgroup.X]` namespaces
 - **Git hooks** — configure hooks directly in plz.toml
-- **Environment wrappers** — run commands through pnpm, npm, uv, or uvx with `tool_env`
+- **Environment wrappers** — run commands through pnpm, npm, uv, or uvx with `env`
 - **Interactive selection** — fuzzy-find tasks when you forget the name
