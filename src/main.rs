@@ -2,6 +2,7 @@ mod config;
 mod healthcheck;
 mod hooks;
 mod init;
+mod install_method;
 mod runner;
 mod settings;
 mod templates;

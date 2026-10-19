@@ -17,7 +17,7 @@ for the TOML schema.
 | `plz healthcheck [--staged]` | Run code health checks on your repo (use `--staged` for only staged files) |
 | `plz schema`            | Print JSON schema for plz.toml                   |
 | `plz cheatsheet`        | Print a cheatsheet of plz.toml features           |
-| `plz update`            | Update plz to the latest version                 |
+| `plz update`            | Update plz to the latest version (if plz was installed another way, such as with uv, pipx, or cargo, shows how to update instead) |
 | `plz plz`               | Set up user defaults in ~/.plz/                  |
 
 > Built-in commands like `init`, `add`, and `hooks` are actually subcommands of `plz plz`. If you have a task with the same name as a built-in command, use `plz plz <command>` to run the built-in (e.g. `plz plz add`).

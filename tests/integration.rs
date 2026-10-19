@@ -3877,3 +3877,66 @@ mod healthcheck_tests {
             .stderr(predicate::str::contains("bad.txt"));
     }
 }
+
+mod install_method_tests {
+    use plzplz::install_method::{InstallMethod, is_cargo_bin, python_env_method};
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use tempfile::TempDir;
+
+    fn venv(root: &Path, marker: Option<&str>) -> PathBuf {
+        let bin = root.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(root.join("pyvenv.cfg"), "").unwrap();
+        if let Some(m) = marker {
+            fs::write(root.join(m), "").unwrap();
+        }
+        bin.join("plz")
+    }
+
+    #[test]
+    fn detects_uv_tool() {
+        let dir = TempDir::new().unwrap();
+        let exe = venv(&dir.path().join("plzplz"), Some("uv-receipt.toml"));
+        assert_eq!(python_env_method(&exe), Some(InstallMethod::UvTool));
+    }
+
+    #[test]
+    fn detects_pipx() {
+        let dir = TempDir::new().unwrap();
+        let exe = venv(&dir.path().join("plzplz"), Some("pipx_metadata.json"));
+        assert_eq!(python_env_method(&exe), Some(InstallMethod::Pipx));
+    }
+
+    #[test]
+    fn detects_plain_venv() {
+        let dir = TempDir::new().unwrap();
+        let exe = venv(&dir.path().join(".venv"), None);
+        assert_eq!(python_env_method(&exe), Some(InstallMethod::Venv));
+    }
+
+    #[test]
+    fn non_venv_is_not_python() {
+        let dir = TempDir::new().unwrap();
+        let bin = dir.path().join(".local/bin");
+        fs::create_dir_all(&bin).unwrap();
+        assert_eq!(python_env_method(&bin.join("plz")), None);
+    }
+
+    #[test]
+    fn detects_default_cargo_bin() {
+        let exe = Path::new("/home/me/.cargo/bin/plz");
+        assert!(is_cargo_bin(exe, None));
+        assert!(!is_cargo_bin(Path::new("/home/me/.local/bin/plz"), None));
+    }
+
+    #[test]
+    fn detects_custom_cargo_home() {
+        let dir = TempDir::new().unwrap();
+        let home = dir.path().join("cargo");
+        fs::create_dir_all(home.join("bin")).unwrap();
+        let exe = home.canonicalize().unwrap().join("bin/plz");
+        assert!(is_cargo_bin(&exe, Some(&home)));
+        assert!(!is_cargo_bin(&exe, None));
+    }
+}

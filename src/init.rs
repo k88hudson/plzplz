@@ -655,34 +655,33 @@ fn setup_settings_editor(settings_path: &std::path::Path) -> Result<()> {
 }
 
 pub fn self_update() -> Result<()> {
-    use axoupdater::{AxoUpdater, ReleaseSource, ReleaseSourceType};
+    use crate::install_method;
 
     let current = env!("CARGO_PKG_VERSION");
     cliclack::intro(format!("plz update (current: v{current})"))?;
 
+    let (method, updater) = install_method::detect_with_updater();
+    // Only Installer comes with an updater; its receipt supplies the install
+    // dir and PATH preference
+    let Some(mut updater) = updater else {
+        cliclack::log::info(method.update_advice())?;
+        cliclack::outro("Nothing to do")?;
+        return Ok(());
+    };
+
     let spinner = cliclack::spinner();
     spinner.start("Checking for updates...");
 
-    let current_exe = std::env::current_exe()?;
-    let install_dir = current_exe
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("Can't determine install directory"))?;
-
-    let mut updater = AxoUpdater::new_for("plzplz");
-    updater.set_release_source(ReleaseSource {
-        release_type: ReleaseSourceType::GitHub,
-        owner: "k88hudson".to_string(),
-        name: "plzplz".to_string(),
-        app_name: "plzplz".to_string(),
-    });
-    updater.set_install_dir(install_dir.to_string_lossy().as_ref());
-    updater
+    let checked = updater
         .set_current_version(current.parse()?)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-
-    let update_needed = updater
-        .is_update_needed_sync()
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+        .and_then(|u| u.disable_installer_output().is_update_needed_sync());
+    let update_needed = match checked {
+        Ok(needed) => needed,
+        Err(e) => {
+            spinner.error("Couldn't check for updates");
+            return Err(anyhow::anyhow!("{e}"));
+        }
+    };
 
     if !update_needed {
         spinner.stop(format!("v{current} is already the latest version"));
@@ -694,7 +693,13 @@ pub fn self_update() -> Result<()> {
     let update_spinner = cliclack::spinner();
     update_spinner.start("Downloading and installing...");
 
-    let result = updater.run_sync().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let result = match updater.run_sync() {
+        Ok(r) => r,
+        Err(e) => {
+            update_spinner.error("Update failed");
+            return Err(anyhow::anyhow!("{e}"));
+        }
+    };
 
     match result {
         Some(update_result) => {

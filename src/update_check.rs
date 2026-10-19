@@ -57,15 +57,7 @@ fn write_cache(path: &std::path::Path, latest_version: &str) {
 }
 
 fn fetch_latest_version() -> Option<String> {
-    use axoupdater::{AxoUpdater, ReleaseSource, ReleaseSourceType};
-
-    let mut updater = AxoUpdater::new_for("plzplz");
-    updater.set_release_source(ReleaseSource {
-        release_type: ReleaseSourceType::GitHub,
-        owner: "k88hudson".to_string(),
-        name: "plzplz".to_string(),
-        app_name: "plzplz".to_string(),
-    });
+    let mut updater = crate::install_method::new_updater();
     let current = env!("CARGO_PKG_VERSION");
     updater.set_current_version(current.parse().ok()?).ok()?;
 
@@ -85,9 +77,8 @@ fn print_hint(latest: &str) {
         semver::Version::parse(latest),
     ) {
         if lat > curr {
-            eprintln!(
-                "\x1b[2mA new version of plz is available (v{latest}). Run `plz update` to upgrade.\x1b[0m"
-            );
+            let how = crate::install_method::detect().update_advice();
+            eprintln!("\x1b[2mA new version of plz is available (v{latest}). {how}\x1b[0m");
         }
     }
 }

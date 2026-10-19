@@ -20,6 +20,8 @@ or `uv`:
 uv tool install plzplz
 ```
 
+To update later, run `plz update` if you used the install script, or upgrade with the same tool you installed with (e.g. `uv tool upgrade plzplz`).
+
 ## GitHub Actions
 
 Use the setup action to install and cache `plz` in your workflows:
