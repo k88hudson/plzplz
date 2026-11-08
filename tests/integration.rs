@@ -1302,6 +1302,8 @@ env = "uv"
     #[test]
     fn run_with_tool_env_pnpm() {
         let dir = TempDir::new().unwrap();
+        // pnpm 11 runs a dependency check before `pnpm exec` and errors without a manifest
+        fs::write(dir.path().join("package.json"), "{}").unwrap();
         let cfg = load_config(
             &dir,
             r#"
