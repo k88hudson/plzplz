@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.24](https://github.com/k88hudson/plzplz/compare/v0.0.23...v0.0.24) - 2026-11-08
+
+### Fixed
+
+- only self-update installer-managed installs ([#31](https://github.com/k88hudson/plzplz/pull/31))
+
+### Other
+
+- bump rustls to 0.23.46 for RUSTSEC-2026-0346..0349
+- *(deps)* bump actions/setup-node from 6.5.0 to 7.0.0 ([#28](https://github.com/k88hudson/plzplz/pull/28))
+- upgrade cargo-dist to 0.34.0
+- update Cargo.lock for RUSTSEC-2026-0382 and RUSTSEC-2026-0386
+- add package.json so pnpm exec test works on pnpm 11
+- bump pinned actions and run Python 3.8 compat on ubuntu-24.04
+
 ## [0.0.23](https://github.com/k88hudson/plzplz/compare/v0.0.22...v0.0.23) - 2026-10-18
 
 ### Other
